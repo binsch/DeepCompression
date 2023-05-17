@@ -200,6 +200,13 @@ def add_arguments(parser):
         default=None,
     )
 
+    parser.add_argument(
+        "--modulation_matrix_width",
+        help="width of the matrices U and V (d in the VCINR paper)",
+        type=int,
+        default=None
+    )
+
 
 def main(args):
     if args.use_wandb:

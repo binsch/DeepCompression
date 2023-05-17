@@ -62,10 +62,11 @@ def get_datasets_and_converter(args, force_no_random_crop=False):
             train_dataset = image.MNIST(
                 root=get_dataset_root("mnist"),
                 train=True,
+                download=True,
                 transform=random_crop if use_patching else None,
             )
         if args.test_dataset == "mnist":
-            test_dataset = image.MNIST(root=get_dataset_root("mnist"), train=False)
+            test_dataset = image.MNIST(root=get_dataset_root("mnist"), train=False, download=True)
 
     if "cifar10" in (args.train_dataset, args.test_dataset):
         converter = conversion.Converter("image")
@@ -202,4 +203,5 @@ def get_model(args):
         latent_dim=args.latent_dim,
         modulation_net_dim_hidden=args.modulation_net_dim_hidden,
         modulation_net_num_layers=args.modulation_net_num_layers,
+        modulation_matrix_width=args.modulation_matrix_width,
     ).to(args.device)
