@@ -75,13 +75,10 @@ class SirenLayer(nn.Module):
         return out
     
     def subnetwork_forward(self, x, G_low):
-        res = torch.empty((x.shape[0], x.shape[1], self.dim_out), device=x.device)
-        for i in range(x.shape[0]):
-            res[i] = nn.functional.linear(x[i], G_low[i]*self.linear.weight, self.linear.bias)
-        if not self.is_last:
-            return self.activation(res)
-        else:
-            return res
+        x = torch.einsum('bni,bhi->bnh', x, (G_low*self.linear.weight)) + self.linear.bias
+        if self.is_last:
+            return x
+        return self.activation(x)
 
 
 class Siren(nn.Module):
@@ -431,8 +428,8 @@ class LatentToModulationVCINR(nn.Module):
     def forward(self, latent):
         G_lows = torch.empty((self.num_modulations, latent.shape[0], self.siren_weight_dim, self.siren_weight_dim), device=latent.device)
         for i in range(self.num_modulations):
-            U = self.U_nets[i](latent).reshape(-1, self.siren_weight_dim, self.modulation_matrix_width) # batch, m, d
-            V = self.V_nets[i](latent).reshape(-1, self.siren_weight_dim, self.modulation_matrix_width) # batch, m, d
+            U = self.U_nets[i](latent).view(-1, self.siren_weight_dim, self.modulation_matrix_width) # batch, m, d
+            V = self.V_nets[i](latent).view(-1, self.siren_weight_dim, self.modulation_matrix_width) # batch, m, d
             G_lows[i] = self.activation(torch.einsum('bij,bkj->bik', U, V))
         return G_lows
 
