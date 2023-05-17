@@ -398,11 +398,11 @@ class LatentToModulationVCINR(nn.Module):
         if num_layers == 1:
             self.net = nn.Linear(latent_dim, modulation_matrix_width*siren_weight_dim*2*num_modulations)
         else:
-            layers = [nn.Linear(latent_dim, dim_hidden), nn.ReLU()]
+            layers = [nn.Linear(latent_dim, dim_hidden), nn.LeakyReLU()]
             if num_layers > 2:
-                for i in range(num_layers - 2):
+                for _ in range(num_layers - 2):
                     layers.append(ResBlock(dim_hidden))
-            layers += [nn.Linear(dim_hidden, modulation_matrix_width*siren_weight_dim*2*num_modulations), nn.ReLU()]
+            layers += [nn.Linear(dim_hidden, 2*num_modulations*modulation_matrix_width*siren_weight_dim), nn.LeakyReLU()]
             self.net = nn.Sequential(*layers)
 
         self.layer_norm = nn.LayerNorm(latent_dim)

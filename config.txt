@@ -4,7 +4,7 @@
 --latent_dim=4096
 --seed=-1
 --outer_lr=3e-6
---batch_size=32
+--batch_size=16
 --num_epochs=100
 --num_workers=1
 --train_dataset=cifar10
@@ -16,9 +16,9 @@
 --wandb_project_name=your_project
 --wandb_entity=your_entity
 --patch_shape=-1
---modulation_matrix_width=64
+--modulation_matrix_width=16
 --modulation_net_num_layers=4
---modulation_net_dim_hidden=1536
+--modulation_net_dim_hidden=5120
 --validation_inner_steps
 3
 10
