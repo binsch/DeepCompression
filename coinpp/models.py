@@ -420,12 +420,14 @@ class ResBlock(nn.Module):
 
         self.linear1 = nn.Linear(dim_hidden, dim_hidden)
         self.activation1 = activation()
+        self.batchnorm1 = torch.nn.BatchNorm1d(dim_hidden)
         self.linear2 = nn.Linear(dim_hidden, dim_hidden)
+        self.batchnorm2 = torch.nn.BatchNorm1d(dim_hidden)
         self.activation2 = activation()
 
     def forward(self, x):
-        residual = self.activation1(self.linear1(x))
-        residual = self.linear2(residual)
+        residual = self.activation1(self.batchnorm1(self.linear1(x)))
+        residual = self.batchnorm2(self.linear2(residual))
         output = residual + x
         output = self.activation2(output)
         return output
