@@ -4,10 +4,11 @@
 --latent_dim=64
 --seed=-1
 --outer_lr=1e-5
---batch_size=16
+--batch_size=256
 --num_epochs=100
---train_dataset=mnist
---test_dataset=mnist
+--num_workers=8
+--train_dataset=cifar10
+--test_dataset=cifar10
 --gradient_checkpointing=0
 --num_validation_points=-1
 --validate_every=2000

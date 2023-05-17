@@ -75,9 +75,8 @@ class SirenLayer(nn.Module):
         return out
     
     def subnetwork_forward(self, x, G_low):
+        # (batch_size, num_points, hidden_dim) x (batch_size, hidden_dim, hidden_dim) -> (batch_size, num_points, hidden_dim)
         x = torch.einsum('bni,bhi->bnh', x, (G_low*self.linear.weight)) + self.linear.bias
-        if self.is_last:
-            return x
         return self.activation(x)
 
 
@@ -423,9 +422,11 @@ class LatentToModulationVCINR(nn.Module):
 
         self.U_nets = nn.Sequential(*U_nets)
         self.V_nets = nn.Sequential(*V_nets)
+        self.layer_norm = nn.LayerNorm(latent_dim)
         self.activation = torch.nn.Sigmoid()
 
     def forward(self, latent):
+        latent = self.layer_norm(latent)
         G_lows = torch.empty((self.num_modulations, latent.shape[0], self.siren_weight_dim, self.siren_weight_dim), device=latent.device)
         for i in range(self.num_modulations):
             U = self.U_nets[i](latent).view(-1, self.siren_weight_dim, self.modulation_matrix_width) # batch, m, d

@@ -80,12 +80,14 @@ def get_datasets_and_converter(args, force_no_random_crop=False):
                 root=get_dataset_root("cifar10"),
                 train=True,
                 transform=torchvision.transforms.Compose(transforms),
+                download=True,
             )
         if args.test_dataset == "cifar10":
             test_dataset = image.CIFAR10(
                 root=get_dataset_root("cifar10"),
                 train=False,
                 transform=torchvision.transforms.ToTensor(),
+                download=True,
             )
 
     if "kodak" in (args.train_dataset, args.test_dataset):
