@@ -324,10 +324,7 @@ class ModulatedSiren(Siren):
             # features.
             for i, module in enumerate(self.net[1:-1]):
                 # skip first and last layers...?
-                G_low = G_lows[i]
-                # how can you modify a linear layers like this?
-                # rewrite SirenLayer?
-                x = module.subnetwork_forward(x, G_low) # (batch_size, num_points, dim_hidden)
+                x = module.subnetwork_forward(x, G_lows[i]) # (batch_size, num_points, dim_hidden)
 
             # Shape (batch_size, num_points, dim_out)
             out = self.last_layer(x)
@@ -398,41 +395,23 @@ class LatentToModulationVCINR(nn.Module):
         self.modulation_matrix_width = modulation_matrix_width
         self.siren_weight_dim = siren_weight_dim
 
-        # a separate net for every U and V matrix of every layer
-        U_nets = []
-        V_nets = []
+        if num_layers == 1:
+            self.net = nn.Linear(latent_dim, modulation_matrix_width*siren_weight_dim*2*num_modulations)
+        else:
+            layers = [nn.Linear(latent_dim, dim_hidden), nn.ReLU()]
+            if num_layers > 2:
+                for i in range(num_layers - 2):
+                    layers.append(ResBlock(dim_hidden))
+            layers += [nn.Linear(dim_hidden, modulation_matrix_width*siren_weight_dim*2*num_modulations), nn.ReLU()]
+            self.net = nn.Sequential(*layers)
 
-        for _ in range(num_modulations):
-            if num_layers == 1:
-                U_nets.append(nn.Linear(latent_dim, modulation_matrix_width*siren_weight_dim))
-                V_nets.append(nn.Linear(latent_dim, modulation_matrix_width*siren_weight_dim))
-            else:
-                layers = [nn.Linear(latent_dim, dim_hidden), nn.ReLU()]
-                if num_layers > 2:
-                    for i in range(num_layers - 2):
-                        layers.append(ResBlock(dim_hidden))
-                layers += [nn.Linear(dim_hidden, modulation_matrix_width*siren_weight_dim), nn.ReLU()]
-                U_nets.append(nn.Sequential(*layers))
-                layers = [nn.Linear(latent_dim, dim_hidden), nn.ReLU()]
-                if num_layers > 2:
-                    for _ in range(num_layers - 2):
-                        layers.append(ResBlock(dim_hidden))
-                layers += [nn.Linear(dim_hidden, modulation_matrix_width*siren_weight_dim)]
-                V_nets.append(nn.Sequential(*layers))
-
-        self.U_nets = nn.ModuleList(U_nets)
-        self.V_nets = nn.ModuleList(V_nets)
         self.layer_norm = nn.LayerNorm(latent_dim)
         self.activation = torch.nn.Sigmoid()
 
     def forward(self, latent):
         latent = self.layer_norm(latent)
-        G_lows = torch.empty((self.num_modulations, latent.shape[0], self.siren_weight_dim, self.siren_weight_dim), device=latent.device)
-        for i in range(self.num_modulations):
-            U = self.U_nets[i](latent).view(-1, self.siren_weight_dim, self.modulation_matrix_width) # batch, m, d
-            V = self.V_nets[i](latent).view(-1, self.siren_weight_dim, self.modulation_matrix_width) # batch, m, d
-            G_lows[i] = self.activation(torch.einsum('bij,bkj->bik', U, V))
-        return G_lows
+        out = self.net(latent).view(self.num_modulations, latent.shape[0], 2, self.siren_weight_dim, self.modulation_matrix_width)
+        return self.activation(torch.einsum('nbij,nbkj->nbik', out[:,:,0,:,:], out[:,:,1,:,:]))
 
 
 class ResBlock(nn.Module):
