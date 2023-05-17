@@ -75,7 +75,7 @@ class SirenLayer(nn.Module):
         return out
     
     def subnetwork_forward(self, x, G_low):
-        # (batch_size, num_points, hidden_dim) x (batch_size, hidden_dim, hidden_dim) -> (batch_size, num_points, hidden_dim)
+        # (batch_size, num_points, dim_hidden) x (batch_size, dim_hidden, dim_hidden) -> (batch_size, num_points, dim_hidden)
         x = torch.einsum('bni,bhi->bnh', x, (G_low*self.linear.weight)) + self.linear.bias
         return self.activation(x)
 
@@ -410,18 +410,18 @@ class LatentToModulationVCINR(nn.Module):
                 layers = [nn.Linear(latent_dim, dim_hidden), nn.ReLU()]
                 if num_layers > 2:
                     for i in range(num_layers - 2):
-                        layers += [nn.Linear(dim_hidden, dim_hidden), nn.ReLU()]
+                        layers.append(ResBlock(dim_hidden))
                 layers += [nn.Linear(dim_hidden, modulation_matrix_width*siren_weight_dim), nn.ReLU()]
                 U_nets.append(nn.Sequential(*layers))
                 layers = [nn.Linear(latent_dim, dim_hidden), nn.ReLU()]
                 if num_layers > 2:
                     for _ in range(num_layers - 2):
-                        layers += [nn.Linear(dim_hidden, dim_hidden), nn.ReLU()]
+                        layers.append(ResBlock(dim_hidden))
                 layers += [nn.Linear(dim_hidden, modulation_matrix_width*siren_weight_dim)]
                 V_nets.append(nn.Sequential(*layers))
 
-        self.U_nets = nn.Sequential(*U_nets)
-        self.V_nets = nn.Sequential(*V_nets)
+        self.U_nets = nn.ModuleList(U_nets)
+        self.V_nets = nn.ModuleList(V_nets)
         self.layer_norm = nn.LayerNorm(latent_dim)
         self.activation = torch.nn.Sigmoid()
 
@@ -433,6 +433,23 @@ class LatentToModulationVCINR(nn.Module):
             V = self.V_nets[i](latent).view(-1, self.siren_weight_dim, self.modulation_matrix_width) # batch, m, d
             G_lows[i] = self.activation(torch.einsum('bij,bkj->bik', U, V))
         return G_lows
+
+
+class ResBlock(nn.Module):
+    def __init__(self, dim_hidden, activation=nn.LeakyReLU):
+        super().__init__()
+
+        self.linear1 = nn.Linear(dim_hidden, dim_hidden)
+        self.activation1 = activation()
+        self.linear2 = nn.Linear(dim_hidden, dim_hidden)
+        self.activation2 = activation()
+
+    def forward(self, x):
+        residual = self.activation1(self.linear1(x))
+        residual = self.linear2(residual)
+        output = residual + x
+        output = self.activation2(output)
+        return output
 
 
 if __name__ == "__main__":
