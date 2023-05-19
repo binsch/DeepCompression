@@ -19,6 +19,7 @@
 --modulation_matrix_width=16
 --modulation_net_num_layers=4
 --modulation_net_dim_hidden=5120
+--use_batch_norm=0
 --validation_inner_steps
 3
 10

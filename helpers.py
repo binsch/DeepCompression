@@ -206,4 +206,5 @@ def get_model(args):
         modulation_net_dim_hidden=args.modulation_net_dim_hidden,
         modulation_net_num_layers=args.modulation_net_num_layers,
         modulation_matrix_width=args.modulation_matrix_width,
+        use_batch_norm=args.use_batch_norm,
     ).to(args.device)

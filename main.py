@@ -71,6 +71,13 @@ def add_arguments(parser):
         default=1,
     )
 
+    parser.add_argument(
+        "--use_batch_norm",
+        help="Use batch norm in modulation net ResNet.",
+        type=int,
+        default=1,
+    )
+
     # Training arguments
     parser.add_argument(
         "--seed",

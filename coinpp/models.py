@@ -184,6 +184,7 @@ class ModulatedSiren(Siren):
         modulation_net_dim_hidden=64,
         modulation_net_num_layers=1,
         modulation_matrix_width=None,
+        use_batch_norm=True,
     ):
         super().__init__(
             dim_in,
@@ -224,7 +225,8 @@ class ModulatedSiren(Siren):
                 modulation_net_dim_hidden,
                 modulation_net_num_layers,
                 modulation_matrix_width,
-                dim_hidden
+                dim_hidden,
+                use_batch_norm=use_batch_norm,
             )
         elif use_latent:
             self.modulation_net = LatentToModulation(
@@ -387,7 +389,7 @@ class LatentToModulationVCINR(nn.Module):
         siren_weight_dim (list): hidden dimension m of the ModulatedSiren hidden weights (mxm)
     """
 
-    def __init__(self, latent_dim, num_modulations, dim_hidden, num_layers, modulation_matrix_width, siren_weight_dim):
+    def __init__(self, latent_dim, num_modulations, dim_hidden, num_layers, modulation_matrix_width, siren_weight_dim, use_batch_norm=True):
         super().__init__()
         self.latent_dim = latent_dim
         self.num_modulations = num_modulations
@@ -402,7 +404,7 @@ class LatentToModulationVCINR(nn.Module):
             layers = [nn.Linear(latent_dim, dim_hidden), nn.LeakyReLU()]
             if num_layers > 2:
                 for _ in range(num_layers - 2):
-                    layers.append(ResBlock(dim_hidden))
+                    layers.append(ResBlock(dim_hidden, use_batch_norm=use_batch_norm))
             layers += [nn.Linear(dim_hidden, 2*num_modulations*modulation_matrix_width*siren_weight_dim), nn.LeakyReLU()]
             self.net = nn.Sequential(*layers)
 
@@ -416,19 +418,25 @@ class LatentToModulationVCINR(nn.Module):
 
 
 class ResBlock(nn.Module):
-    def __init__(self, dim_hidden, activation=nn.LeakyReLU):
+    def __init__(self, dim_hidden, activation=nn.LeakyReLU, use_batch_norm=True):
         super().__init__()
+        self.use_batch_norm=use_batch_norm
 
         self.linear1 = nn.Linear(dim_hidden, dim_hidden)
         self.activation1 = activation()
-        self.batchnorm1 = torch.nn.BatchNorm1d(dim_hidden)
         self.linear2 = nn.Linear(dim_hidden, dim_hidden)
-        self.batchnorm2 = torch.nn.BatchNorm1d(dim_hidden)
+        if use_batch_norm:
+            self.batchnorm1 = torch.nn.BatchNorm1d(dim_hidden)
+            self.batchnorm2 = torch.nn.BatchNorm1d(dim_hidden)
         self.activation2 = activation()
 
     def forward(self, x):
-        residual = self.activation1(self.batchnorm1(self.linear1(x)))
-        residual = self.batchnorm2(self.linear2(residual))
+        if self.use_batch_norm:
+            residual = self.activation1(self.batchnorm1(self.linear1(x)))
+            residual = self.batchnorm2(self.linear2(residual))
+        else:
+            residual = self.activation1(self.linear1(x))
+            residual = self.linear2(residual)
         output = residual + x
         output = self.activation2(output)
         return output
