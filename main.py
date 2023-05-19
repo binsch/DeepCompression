@@ -224,6 +224,9 @@ def main(args):
 
         # Define path where model will be saved
         model_path = Path(wandb.run.dir) / "model.pt"
+
+        #MAC-ADD: save code
+        wandb.run.log_code()
     else:
         model_path = ""
 
