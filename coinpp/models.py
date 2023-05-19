@@ -324,7 +324,7 @@ class ModulatedSiren(Siren):
             # features.
             for i, module in enumerate(self.net[1:-1]):
                 # skip first and last layers...?
-                x = module.subnetwork_forward(x, G_lows[i]) # (batch_size, num_points, dim_hidden)
+                x = module.subnetwork_forward(x, G_lows[:,i]) # (batch_size, num_points, dim_hidden)
 
             # Shape (batch_size, num_points, dim_out)
             out = self.last_layer(x)
@@ -410,8 +410,8 @@ class LatentToModulationVCINR(nn.Module):
 
     def forward(self, latent):
         latent = self.layer_norm(latent)
-        out = self.net(latent).view(self.num_modulations, latent.shape[0], 2, self.siren_weight_dim, self.modulation_matrix_width)
-        return self.activation(torch.einsum('nbij,nbkj->nbik', out[:,:,0,:,:], out[:,:,1,:,:]))
+        out = self.net(latent).view(latent.shape[0], self.num_modulations, 2, self.siren_weight_dim, self.modulation_matrix_width)
+        return self.activation(torch.einsum('bnij,bnkj->bnik', out[:,:,0,:,:], out[:,:,1,:,:]))
 
 
 class ResBlock(nn.Module):
