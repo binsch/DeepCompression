@@ -76,7 +76,7 @@ class SirenLayer(nn.Module):
     
     def subnetwork_forward(self, x, G_low):
         # (batch_size, num_points, dim_hidden) x (batch_size, dim_hidden, dim_hidden) -> (batch_size, num_points, dim_hidden)
-        x = torch.einsum('bni,bhi->bnh', x, (G_low*self.linear.weight)) + self.linear.bias
+        x = torch.einsum('bni,bhi->bnh', x, ((G_low + 1.0)*self.linear.weight)) + self.linear.bias
         return self.activation(x)
 
 
