@@ -74,8 +74,9 @@ class SirenLayer(nn.Module):
             out = self.activation(out)
         return out
     
-    def subnetwork_forward(self, x, G_low):
+    def subnetwork_forward(self, x, U, V):
         # (batch_size, num_points, dim_hidden) x (batch_size, dim_hidden, dim_hidden) -> (batch_size, num_points, dim_hidden)
+        G_low = nn.functional.sigmoid(torch.einsum('bnij,bnkj->bnik', U[:,:,0,:,:], V[:,:,1,:,:]))
         x = torch.einsum('bni,bhi->bnh', x, ((G_low + 1.0)*self.linear.weight)) + self.linear.bias
         return self.activation(x)
 
@@ -318,13 +319,13 @@ class ModulatedSiren(Siren):
             x = self.net[0](x)
 
             # Shape (batch_size, num_modulations, dim_hidden, dim_hidden)
-            G_lows = self.modulation_net(latent)
+            U, V = self.modulation_net(latent)
 
             # Split modulations into shifts and scales and apply them to hidden
             # features.
             for i, module in enumerate(self.net[1:-1]):
                 # skip first and last layers...?
-                x = module.subnetwork_forward(x, G_lows[:,i]) # (batch_size, num_points, dim_hidden)
+                x = module.subnetwork_forward(x, U[:,i], V[:, i]) # (batch_size, num_points, dim_hidden)
 
             # Shape (batch_size, num_points, dim_out)
             out = self.last_layer(x)
@@ -406,12 +407,12 @@ class LatentToModulationVCINR(nn.Module):
             self.net = nn.Sequential(*layers)
 
         self.layer_norm = nn.LayerNorm(latent_dim)
-        self.activation = torch.nn.Sigmoid()
 
     def forward(self, latent):
         latent = self.layer_norm(latent)
         out = self.net(latent).view(latent.shape[0], self.num_modulations, 2, self.siren_weight_dim, self.modulation_matrix_width)
-        return self.activation(torch.einsum('bnij,bnkj->bnik', out[:,:,0,:,:], out[:,:,1,:,:]))
+        U, V = out[:,:,0,:,:], out[:,:,1,:,:]
+        return U, V
 
 
 class ResBlock(nn.Module):
