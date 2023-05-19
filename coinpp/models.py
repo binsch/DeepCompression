@@ -75,8 +75,8 @@ class SirenLayer(nn.Module):
         return out
     
     def subnetwork_forward(self, x, U, V):
+        G_low = nn.functional.sigmoid(torch.einsum('bij,bkj->bik', U, V))
         # (batch_size, num_points, dim_hidden) x (batch_size, dim_hidden, dim_hidden) -> (batch_size, num_points, dim_hidden)
-        G_low = nn.functional.sigmoid(torch.einsum('bnij,bnkj->bnik', U[:,:,0,:,:], V[:,:,1,:,:]))
         x = torch.einsum('bni,bhi->bnh', x, ((G_low + 1.0)*self.linear.weight)) + self.linear.bias
         return self.activation(x)
 
