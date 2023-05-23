@@ -81,7 +81,13 @@ class SirenLayer(nn.Module):
             out = torch.einsum('bni,bhi->bnh', x, ((G_low + 1.0)*self.linear.weight)) + self.linear.bias
         else:
             out = torch.einsum('bni,bhi->bnh', x, ((G_low + 1.0)*self.linear.weight))
-        return self.activation(out)
+        if self.is_last:
+            # We assume target data is in [0, 1], so adding 0.5 allows us to learn
+            # zero-centered features
+            out += 0.5
+        else:
+            out = self.activation(out)
+        return out
 
 
 class Siren(nn.Module):
