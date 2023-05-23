@@ -14,8 +14,8 @@
 --use_wandb=0
 --wandb_project_name=VC-INR
 --wandb_entity=julienbinsch
---modulation_matrix_width=5
---modulation_net_num_layers=4
+--UV_rank=5
+--modulation_net_num_res_blocks=2
 --modulation_net_dim_hidden=3072
 --use_batch_norm=0
 --patch_shape
