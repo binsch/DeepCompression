@@ -34,7 +34,7 @@ class Trainer:
         self.args = args
         self.patcher = patcher
 
-        self.outer_optimizer = torch.optim.Adam(
+        self.outer_optimizer = torch.optim.AdamW(
             self.func_rep.parameters(), lr=args.outer_lr
         )
 
