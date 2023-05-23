@@ -30,31 +30,10 @@ def add_arguments(parser):
     )
 
     parser.add_argument(
-        "--modulate_scale",
-        help="Whether to modulate scale.",
-        type=int,
-        default=0,
-    )
-
-    parser.add_argument(
-        "--modulate_shift",
-        help="Whether to modulate shift.",
-        type=int,
-        default=1,
-    )
-
-    parser.add_argument(
-        "--use_latent",
-        help="Whether to use latent vector.",
-        type=int,
-        default=1,
-    )
-
-    parser.add_argument(
         "--latent_dim",
-        help="Dimension of the latent vector mapped to modulations. If set to -1, will not use latent vector.",
+        help="Dimension of the latent vector mapped to modulations.",
         type=int,
-        default=32,
+        default=64,
     )
 
     parser.add_argument(
@@ -65,17 +44,31 @@ def add_arguments(parser):
     )
 
     parser.add_argument(
-        "--modulation_net_num_layers",
-        help="Number of layers in modulation network. 1 corresponds to a linear layer.",
+        "--modulation_net_num_res_blocks",
+        help="Number of ResBlocks in modulation network.",
         type=int,
         default=1,
     )
 
     parser.add_argument(
         "--use_batch_norm",
-        help="Use batch norm in modulation net ResNet.",
+        help="Use batch norm in modulation net ResBlocks.",
         type=int,
         default=1,
+    )
+
+    parser.add_argument(
+        "--UV_rank",
+        help="width of the matrices U and V (d in the VCINR paper)",
+        type=int,
+        default=5
+    )
+
+    parser.add_argument(
+        "--modulate_last_layer",
+        help="Modulate the last layer. Default: 1.",
+        type=int,
+        default=1
     )
 
     # Training arguments
@@ -205,13 +198,6 @@ def add_arguments(parser):
         help="Wandb job type. This is useful for grouping runs together.",
         type=str,
         default=None,
-    )
-
-    parser.add_argument(
-        "--modulation_matrix_width",
-        help="width of the matrices U and V (d in the VCINR paper)",
-        type=int,
-        default=None
     )
 
 
