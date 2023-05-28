@@ -92,6 +92,7 @@ def outer_step(
     features,
     inner_steps,
     inner_lr,
+    modulations_init,
     is_train=False,
     return_reconstructions=False,
     gradient_checkpointing=False,
@@ -106,9 +107,7 @@ def outer_step(
     """
     func_rep.zero_grad()
     batch_size = len(coordinates)
-    modulations_init = torch.zeros(
-        batch_size, func_rep.modulation_net.latent_dim, device=coordinates.device
-    ).requires_grad_()
+    modulations_init = modulations_init.expand(batch_size, -1)
 
     # Run inner loop
     modulations = inner_loop(

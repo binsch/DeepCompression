@@ -340,13 +340,14 @@ class ResBlock(nn.Module):
         self.activation2 = activation()
 
     def forward(self, x):
+        residual = x.clone()
         if self.use_batch_norm:
-            residual = self.activation1(self.batchnorm1(self.linear1(x)))
-            residual = self.batchnorm2(self.linear2(residual))
+            x = self.activation1(self.batchnorm1(self.linear1(x)))
+            x = self.batchnorm2(self.linear2(residual))
         else:
-            residual = self.activation1(self.linear1(x))
-            residual = self.linear2(residual)
-        output = residual + x
+            x = self.activation1(self.linear1(x))
+            x = self.linear2(residual)
+        output = x + residual
         output = self.activation2(output)
         return output
 

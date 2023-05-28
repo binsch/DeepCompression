@@ -3,6 +3,7 @@ import coinpp.losses as losses
 import coinpp.metalearning as metalearning
 import torch
 import wandb
+from itertools import chain
 
 
 class Trainer:
@@ -34,8 +35,18 @@ class Trainer:
         self.args = args
         self.patcher = patcher
 
-        self.outer_optimizer = torch.optim.AdamW(
-            self.func_rep.parameters(), lr=args.outer_lr
+        self.modulations_init = torch.zeros(
+            func_rep.modulation_net.latent_dim, device=args.device
+        ).requires_grad_()
+
+        self.inner_lr = torch.full(
+            (self.args.latent_dim,),
+            args.inner_lr,
+            device=args.device
+        ).requires_grad_()
+
+        self.outer_optimizer = torch.optim.Adam(
+            chain(self.func_rep.parameters(), iter([self.modulations_init, self.inner_lr])), lr=args.outer_lr
         )
 
         self.train_dataset = train_dataset
@@ -92,7 +103,8 @@ class Trainer:
                 coordinates,
                 features,
                 inner_steps=self.args.inner_steps,
-                inner_lr=self.args.inner_lr,
+                inner_lr=self.inner_lr,
+                modulations_init=self.modulations_init,
                 is_train=True,
                 return_reconstructions=False,
                 gradient_checkpointing=self.args.gradient_checkpointing,
@@ -100,8 +112,10 @@ class Trainer:
 
             # Update parameters of base network
             self.outer_optimizer.zero_grad()
-            outputs["loss"].backward(create_graph=False)
+            outputs["loss"].backward()
             self.outer_optimizer.step()
+
+            torch.clamp(self.inner_lr, min=5., max=5.)
 
             if self.step % self.args.validate_every == 0 and self.step != 0:
                 self.validation()
@@ -111,7 +125,7 @@ class Trainer:
             self.step += 1
 
             print(
-                f'Step {self.step}, Loss {log_dict["loss"]:.3f}, PSNR {log_dict["psnr"]:.3f}'
+                f'Step {self.step}, Loss {log_dict["loss"]:.3f}, PSNR {log_dict["psnr"]:.3f}, min_inner_lr: {torch.min(self.inner_lr)}, max_inner_lr: {torch.max(self.inner_lr)}'
             )
 
             if self.args.use_wandb:
@@ -154,7 +168,8 @@ class Trainer:
                         coordinates,
                         features,
                         inner_steps=inner_steps,
-                        inner_lr=self.args.inner_lr,
+                        inner_lr=self.inner_lr,
+                        modulations_init=self.modulations_init,
                         chunk_size=self.args.batch_size,
                         gradient_checkpointing=self.args.gradient_checkpointing,
                     )
@@ -187,7 +202,8 @@ class Trainer:
                         coordinates,
                         features,
                         inner_steps=inner_steps,
-                        inner_lr=self.args.inner_lr,
+                        inner_lr=self.inner_lr,
+                        modulations_init=self.modulations_init,
                         is_train=False,
                         return_reconstructions=True,
                         gradient_checkpointing=self.args.gradient_checkpointing,
