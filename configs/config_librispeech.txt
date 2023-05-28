@@ -13,7 +13,7 @@
 --gradient_checkpointing=0
 --num_validation_points=-1
 --validate_every=2000
---use_wandb=0
+--use_wandb=1
 --wandb_project_name=VC-INR
 --wandb_entity=julienbinsch
 --UV_rank=5
