@@ -1,8 +1,10 @@
+%matplotlib notebook
 import glob
 import imageio
 import json5 as json
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import matplotlib
 import numpy as np
 import re
 import torch
@@ -10,7 +12,6 @@ import torchvision
 from matplotlib import cm
 from matplotlib.ticker import MaxNLocator
 from pathlib import Path
-import matplotlib
 import imageio.v2 as imageio
 
 # Ensure script can be executed even if cartopy is not available
@@ -588,7 +589,7 @@ def plot_quantization_curve(
 
 def plot_qualitative_comparison(
     models=["COIN++", "BPG"],
-    dataset="CIFAR10",
+    dataset="ERA5",
     max_residual=0.15,
     upscale=1,
     padding_fraction=0.1,
@@ -611,34 +612,44 @@ def plot_qualitative_comparison(
         show (bool): If True shows plot.
     """
     # Dictionary mapping model name to image path roots
+    print("pqc")
     model_to_path = {"COIN++": "coinpp", "BPG": "bpg"}
-
+    print("mtp")
     data_dir = f"{dataset_to_dir[dataset]}/ablations/qualitative"
+    print("dd")
 
     to_tensor = torchvision.transforms.ToTensor()
     # Initialize list of all images to be iterated over
     all_imgs = []
     # Extract paths to original images (or tensors)
     if dataset in ("ERA5", "FastMRI"):
+        print("dds")
         original_paths = glob.glob(f"{data_dir}/original_*.pt")
     else:
         original_paths = glob.glob(f"{data_dir}/original_*.png")
     # Ensure consistent image ordering
+    print("exit dds")
     original_paths = alphanumeric_sort(original_paths)
 
     # Iterate over original images and find corresponding reconstructions
     for original_path in original_paths:
         # Add original image
         if dataset == "ERA5":
+            print("orig_path")
             # Tensor of shape (1, num_lats, num_lons)
             original_temperatures = torch.load(original_path)
+            print("loaded")
             # Change file extension from .pt to .png
             original_path_img = original_path[:-2] + "png"
+            print("orig_img")
             # Render temperature data on globe
             globe_plot(original_temperatures, output_file=original_path_img, dpi=200)
+            print("gp")
+            
             # Load rendered image
             original_img = imageio.imread(original_path_img)
             all_imgs.append(to_tensor(original_img))
+
         elif dataset == "FastMRI":
             # Tensor of shape (1, 16, 320, 320)
             original_mri = torch.load(original_path)
@@ -721,7 +732,7 @@ def plot_qualitative_comparison(
     # Padding as a fraction of image height
     padding = int(padding_fraction * all_imgs.shape[-2])
 
-    if True:
+    if show:
         img_grid = torchvision.utils.make_grid(
             all_imgs, nrow=num_imgs_per_row, padding=padding, pad_value=1
         )
@@ -796,7 +807,7 @@ def plot_qualitative_quantization(
     # Padding as a fraction of image height
     padding = int(padding_fraction * all_imgs.shape[-2])
 
-    if True:
+    if show:
         img_grid = torchvision.utils.make_grid(
             all_imgs, nrow=num_imgs, padding=padding, pad_value=1
         )
@@ -852,7 +863,7 @@ def plot_meta_learning_curves(dataset="CIFAR10", output_file=None, show=False):
         # Reduce number of ticks for librispeech for clarity
         plt.gca().xaxis.set_major_locator(plt.MaxNLocator(5))
 
-    if True:
+    if show:
         plt.show()
 
     if output_file:
@@ -937,7 +948,7 @@ def globe_plot(
         longitude, latitude, temperature, transform=ccrs.PlateCarree(), cmap=cmap
     )
 
-    if show:
+    if True:
         plt.show()
 
     if output_file:
@@ -948,6 +959,7 @@ def globe_plot(
 
 if __name__ == "__main__":
     import os
+    print("enetered")
 
     make_plot_rate_distortion = False
     make_plot_encoding_curve = False
@@ -961,6 +973,7 @@ if __name__ == "__main__":
     make_plot_learning_curve = False
 
     if not os.path.exists("figures"):
+        #print("enetered")
         os.mkdir("figures")
 
     if make_plot_rate_distortion:
@@ -1133,26 +1146,16 @@ if __name__ == "__main__":
                 )
 
     if make_plot_qualitative_comparison:
-        
+        print("entered")
         plot_qualitative_comparison(
             output_file="figures/qualitative_comparison_era5.png",
             dataset="ERA5",
             max_residual=0.02,
             models=["COIN++"],
         )
-        
 
-    if make_plot_qualitative_quantization:
-        plot_qualitative_quantization(
-            output_file="figures/qualitative_quantization_cifar10.png",
-            dataset="CIFAR10",
-            upscale=4,
-        )
-        plot_qualitative_quantization(
-            output_file="figures/qualitative_quantization_mnist.png",
-            dataset="MNIST",
-            upscale=4,
-        )
+
+
 
     if make_plot_learning_curve:
         plot_meta_learning_curves(

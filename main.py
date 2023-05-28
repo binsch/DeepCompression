@@ -200,6 +200,13 @@ def add_arguments(parser):
         default=None,
     )
 
+    parser.add_argument(
+        "--just_validate",
+        help="we just want to validate an already trained model",
+        type=bool,
+        default=False
+    )
+
 
 def main(args):
     if args.use_wandb:
@@ -232,6 +239,9 @@ def main(args):
     train_dataset, test_dataset, converter = helpers.get_datasets_and_converter(args)
     model = helpers.get_model(args)
 
+    checkpoint = torch.load("/content/drive/MyDrive/DLLab/mac_dll/wandb/run-20230524_204818-s5uzzhj0/files/model.pt")
+    model.load_state_dict(checkpoint['model_state_dict'])
+
     print(model)
     print(args)
 
@@ -256,6 +266,9 @@ def main(args):
         patcher=patcher,
         model_path=model_path,
     )
+
+    if args.just_validate:
+      trainer.validation()
 
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}:")

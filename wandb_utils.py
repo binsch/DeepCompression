@@ -27,7 +27,7 @@ def load_model(wandb_run_path, device):
     # Reconstruct model based on args
     model = get_model(args)
     # Load trained weights into model
-    model.load_state_dict(model_dict["state_dict"])
+    model.load_state_dict(model_dict["model_state_dict"])
     model = model.to(device)
     # Optionally build patcher
     patcher = None

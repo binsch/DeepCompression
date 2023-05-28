@@ -220,10 +220,15 @@ class Trainer:
                         torch.save(
                             {
                                 "args": self.args,
-                                "state_dict": self.func_rep.state_dict(),
+                                "model_state_dict": self.func_rep.state_dict(),
+                                'optimizer_state_dict': self.outer_optimizer.state_dict(),
+                                "loss": mean_loss,
+                                "psnr": self.best_val_psnr,
+                                "step": self.step
                             },
                             self.model_path,
                         )
+
 
             if self.args.use_wandb:
                 # Store final batch of reconstructions to visually inspect model
@@ -231,6 +236,9 @@ class Trainer:
                 reconstruction = self.converter.to_data(
                     None, outputs["reconstructions"]
                 )
+                
+                torch.save(reconstruction, "era5_reconstruction.pt" )
+                
                 if self.patcher:
                     # If using patches, unpatch the reconstruction
                     # Shape (channels, *spatial_dims)
