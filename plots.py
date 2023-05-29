@@ -651,13 +651,14 @@ def plot_qualitative_comparison(
 
         # Extract image index from file name (see original_paths)
         img_idx = original_path.split("/")[-1].split(".")[0].split("_")[-1]
-        for model in models:
+        new_m = [(i+1, val) for i, val in enumerate(models)]
+        for model in new_m:
             # Load model reconstructed image
             if dataset == "ERA5":
-                rec_path = f"{data_dir}/{model_to_path[model]}_{img_idx}.pt"
-                rec_temperatures = torch.load(rec_path)
+                rec_path = f"/home/vf627856/deeplab/mac_dll/era5_reconstruction.pt"
+                rec_temperatures = torch.load(rec_path, map_location=torch.device('cpu'))[model[0]]
                 # Render image of globe
-                img_path = f"{data_dir}/{model_to_path[model]}_{img_idx}.png"
+                img_path = f"/home/vf627856/deeplab/mac_dll/*.png"
                 globe_plot(rec_temperatures, output_file=img_path, dpi=200)
                 # Add reconstructed image
                 model_img = imageio.imread(img_path)
@@ -681,7 +682,7 @@ def plot_qualitative_comparison(
                     original_temperatures - rec_temperatures
                 )
                 residual_path = (
-                    f"{data_dir}/{model_to_path[model]}_{img_idx}_residual.png"
+                    f"{data_dir}/{model_to_path[model[1]]}_{img_idx}_residual.png"
                 )
                 # Render residual plot using viridis cmap
                 globe_plot(
@@ -947,16 +948,16 @@ def globe_plot(
 if __name__ == "__main__":
     import os
 
-    make_plot_rate_distortion = True
+    make_plot_rate_distortion = False
     make_plot_encoding_curve = False
     make_plot_encoding_time = False
     make_plot_quantization_curve = False
     make_plot_num_bits_ablation = False
     make_plot_num_inner_steps_ablation = False
     make_plot_quantization_entropy_coding_ablation = False
-    make_plot_qualitative_comparison = False
+    make_plot_qualitative_comparison = True
     make_plot_qualitative_quantization = False
-    make_plot_learning_curve = True
+    make_plot_learning_curve = False
 
     if not os.path.exists("figures"):
         os.mkdir("figures")
@@ -1132,25 +1133,10 @@ if __name__ == "__main__":
 
     if make_plot_qualitative_comparison:
         plot_qualitative_comparison(
-            output_file="figures/qualitative_comparison_cifar10.png", upscale=4
-        )
-        plot_qualitative_comparison(
             output_file="figures/qualitative_comparison_era5.png",
             dataset="ERA5",
             max_residual=0.02,
             models=["COIN++"],
-        )
-        plot_qualitative_comparison(
-            output_file="figures/qualitative_comparison_fastmri.png",
-            models=["COIN++"],
-            dataset="FastMRI",
-            max_residual=0.25,
-        )
-        plot_qualitative_comparison(
-            output_file="figures/qualitative_comparison_kodak.png",
-            models=["COIN++"],
-            dataset="Kodak",
-            max_residual=0.5,
         )
 
     if make_plot_qualitative_quantization:
