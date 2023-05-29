@@ -216,6 +216,11 @@ class ModulatedSiren(Siren):
             siren_dim_out=(self.dim_out if modulate_last_layer else None),
         )
 
+    def define_inner_lr_params(self, latent_dim, device):
+      self.inner_lr = nn.Parameter( torch.ones(latent_dim, requires_grad=True).to(device))
+      print(self.inner_lr.is_leaf)
+
+
     def modulated_forward(self, x, latent):
         """Forward pass of modulated SIREN model.
 

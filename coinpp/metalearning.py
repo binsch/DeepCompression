@@ -83,7 +83,7 @@ def inner_loop_step(
             create_graph=is_train and not detach,
         )[0]
     # Perform single gradient descent step
-    return modulations - inner_lr * grad
+    return modulations - func_rep.inner_lr * grad
 
 
 def outer_step(

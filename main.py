@@ -231,6 +231,7 @@ def main(args):
     # Build datasets, converters and model
     train_dataset, test_dataset, converter = helpers.get_datasets_and_converter(args)
     model = helpers.get_model(args)
+    model.define_inner_lr_params(args.latent_dim, args.device)
 
     print(model)
     print(args)

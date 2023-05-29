@@ -28,7 +28,7 @@ class ERA5(torch.utils.data.Dataset):
         self.split = split
         self.transform = transform
         self.normalize = normalize
-        self.filepaths = glob.glob(str(root) + f"_{split}/*.npz")
+        self.filepaths = glob.glob(str(root) + f"/*_{split}/*.npz")
         self.filepaths.sort()  # Ensure consistent ordering of paths
 
     def __getitem__(self, index):

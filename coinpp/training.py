@@ -34,7 +34,7 @@ class Trainer:
         self.args = args
         self.patcher = patcher
 
-        self.outer_optimizer = torch.optim.AdamW(
+        self.outer_optimizer = torch.optim.Adam(
             self.func_rep.parameters(), lr=args.outer_lr
         )
 
@@ -103,6 +103,10 @@ class Trainer:
             outputs["loss"].backward(create_graph=False)
             self.outer_optimizer.step()
 
+            tmp = self.func_rep.inner_lr.clone()
+            tmp.clamp_(-5, 5)
+            self.func_rep.inner_lr.data = tmp.clone().requires_grad_()
+
             if self.step % self.args.validate_every == 0 and self.step != 0:
                 self.validation()
 
@@ -110,8 +114,9 @@ class Trainer:
 
             self.step += 1
 
+            torch.set_printoptions(precision=25)
             print(
-                f'Step {self.step}, Loss {log_dict["loss"]:.3f}, PSNR {log_dict["psnr"]:.3f}'
+                f'Step {self.step}, Loss {log_dict["loss"]:.3f}, PSNR {log_dict["psnr"]:.3f}, min_inner_lr {torch.min(self.func_rep.inner_lr)}, max_inner_lr {torch.max(self.func_rep.inner_lr)}'
             )
 
             if self.args.use_wandb:
