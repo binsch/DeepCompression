@@ -103,9 +103,9 @@ class Trainer:
             outputs["loss"].backward(create_graph=False)
             self.outer_optimizer.step()
 
-            tmp = self.func_rep.inner_lr.clone()
-            tmp.clamp_(-5, 5)
-            self.func_rep.inner_lr.data = tmp.clone().requires_grad_()
+            #tmp = self.func_rep.inner_lr.clone()
+            #tmp.clamp_(-5, 5)
+            #self.func_rep.inner_lr.data = tmp.clone().requires_grad_()
 
             if self.step % self.args.validate_every == 0 and self.step != 0:
                 self.validation()
@@ -225,7 +225,8 @@ class Trainer:
                         torch.save(
                             {
                                 "args": self.args,
-                                "state_dict": self.func_rep.state_dict(),
+                                "model_state_dict": self.func_rep.state_dict(),
+                                'optimizer_state_dict': self.outer_optimizer.state_dict()
                             },
                             self.model_path,
                         )
