@@ -38,7 +38,7 @@ def inner_loop(
                 fitted_modulations,
                 coordinates,
                 features,
-                torch.as_tensor(inner_lr),
+                inner_lr,
                 torch.as_tensor(is_train),
                 torch.as_tensor(gradient_checkpointing),
             )

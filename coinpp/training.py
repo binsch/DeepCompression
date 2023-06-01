@@ -99,6 +99,8 @@ class Trainer:
                 coordinates = coordinates[:, idx, :]
                 features = features[:, idx, :]
 
+            self.outer_optimizer.zero_grad()
+
             outputs = metalearning.outer_step(
                 self.func_rep,
                 coordinates,
@@ -112,7 +114,7 @@ class Trainer:
             )
 
             # Update parameters of base network
-            self.outer_optimizer.zero_grad()
+            
             outputs["loss"].backward()
             self.outer_optimizer.step()
 
