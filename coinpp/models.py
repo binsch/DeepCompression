@@ -268,7 +268,7 @@ class LatentToModulationMatrices(nn.Module):
     """
 
     def __init__(self, latent_dim, num_hidden_modulation_matrices, modulation_net_dim_hidden, modulation_net_num_res_blocks,
-                 UV_rank, siren_dim_hidden, use_batch_norm=True, siren_dim_out=None, use_layer_norm=False):
+                 UV_rank, siren_dim_hidden, use_batch_norm=True, siren_dim_out=None):
         super().__init__()
         self.latent_dim = latent_dim
         self.num_hidden_modulation_matrices = num_hidden_modulation_matrices
@@ -344,18 +344,12 @@ class ResBlock(nn.Module):
         if use_batch_norm:   
             self.batchnorm1 = torch.nn.BatchNorm1d(dim_hidden, momentum=momentum)
             self.batchnorm2 = torch.nn.BatchNorm1d(dim_hidden, momentum=momentum)
-        elif use_layer_norm:
-            self.layernorm1 = torch.nn.LayerNorm(dim_hidden)
-            self.layernorm2 = torch.nn.LayerNorm(dim_hidden)
 
     def forward(self, x):
         residual = x.clone()
         if self.use_batch_norm:
             x = self.activation1(self.batchnorm1(self.linear1(x)))
             x = self.batchnorm2(self.linear2(x))
-        elif self.use_layer_norm:
-            x = self.activation1(self.layernorm1(self.linear1(x)))
-            x = self.layernorm2(self.linear2(x))
         else:
             x = self.activation1(self.linear1(x))
             x = self.linear2(x)
