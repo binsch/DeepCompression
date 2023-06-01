@@ -346,14 +346,14 @@ class ResBlock(nn.Module):
             self.batchnorm2 = torch.nn.BatchNorm1d(dim_hidden, momentum=momentum)
 
     def forward(self, x):
-        residual = x.clone()
+        identity = x
         if self.use_batch_norm:
             x = self.activation1(self.batchnorm1(self.linear1(x)))
             x = self.batchnorm2(self.linear2(x))
         else:
             x = self.activation1(self.linear1(x))
             x = self.linear2(x)
-        output = x + residual
+        output = x + identity
         output = self.activation2(output)
         return output
 
