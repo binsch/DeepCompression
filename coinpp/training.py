@@ -79,6 +79,7 @@ class Trainer:
     def train_epoch(self):
         """Train model for a single epoch."""
         for data in self.train_dataloader:
+            #self.inner_lr = torch.clamp(self.inner_lr, min=-5., max=5.)
             data = data.to(self.args.device)
             coordinates, features = self.converter.to_coordinates_and_features(data)
 
@@ -114,8 +115,6 @@ class Trainer:
             self.outer_optimizer.zero_grad()
             outputs["loss"].backward()
             self.outer_optimizer.step()
-
-            torch.clamp(self.inner_lr, min=5., max=5.)
 
             if self.step % self.args.validate_every == 0 and self.step != 0:
                 self.validation()

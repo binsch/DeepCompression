@@ -78,9 +78,9 @@ class SirenLayer(nn.Module):
         # same as forward, but pointwise multiply the weights with G_low
         # (batch_size, num_points, dim_hidden) x (batch_size, dim_hidden, dim_hidden) -> (batch_size, num_points, dim_hidden)
         if self.linear.bias is not None:
-            out = torch.einsum('bni,bhi->bnh', x, ((G_low + 1.0)*self.linear.weight)) + self.linear.bias
+            out = torch.einsum('bni,bhi->bnh', x, (G_low*self.linear.weight)) + self.linear.bias
         else:
-            out = torch.einsum('bni,bhi->bnh', x, ((G_low + 1.0)*self.linear.weight))
+            out = torch.einsum('bni,bhi->bnh', x, (G_low*self.linear.weight))
         if self.is_last:
             # We assume target data is in [0, 1], so adding 0.5 allows us to learn
             # zero-centered features
@@ -111,7 +111,7 @@ class Siren(nn.Module):
         num_layers,
         w0=30.0,
         w0_initial=30.0,
-        use_bias=True,
+        use_bias=False,
     ):
         super().__init__()
         self.dim_in = dim_in
@@ -268,7 +268,7 @@ class LatentToModulationMatrices(nn.Module):
     """
 
     def __init__(self, latent_dim, num_hidden_modulation_matrices, modulation_net_dim_hidden, modulation_net_num_res_blocks,
-                 UV_rank, siren_dim_hidden, use_batch_norm=True, siren_dim_out=None):
+                 UV_rank, siren_dim_hidden, use_batch_norm=True, siren_dim_out=None, use_layer_norm=False):
         super().__init__()
         self.latent_dim = latent_dim
         self.num_hidden_modulation_matrices = num_hidden_modulation_matrices
@@ -288,21 +288,21 @@ class LatentToModulationMatrices(nn.Module):
         )
 
         # The initial layer projects the latent space representation onto a vector that can be used as input for the first ResBlock
-        layers = [nn.Linear(latent_dim, modulation_net_dim_hidden), nn.LeakyReLU()]
+        layers = [nn.Linear(latent_dim, modulation_net_dim_hidden)]
 
         # Generate ResBlocks
         for _ in range(modulation_net_num_res_blocks):
             layers.append(ResBlock(modulation_net_dim_hidden, use_batch_norm=use_batch_norm))
 
         # The last layer maps from the hidden dim of the ResBlock to the correct output length
-        layers += [nn.Linear(modulation_net_dim_hidden, self.modulation_net_dim_out), nn.LeakyReLU()]
+        layers += [nn.Linear(modulation_net_dim_hidden, self.modulation_net_dim_out)]
         self.net = nn.Sequential(*layers)
 
         self.layer_norm = nn.LayerNorm(latent_dim)
 
     def forward(self, latent):
-        out = self.layer_norm(latent)
-        out = self.net(out)
+        latent = self.layer_norm(latent)
+        out = self.net(latent)
 
         UV = out[:,:self.UV_end_idx].view(
             latent.shape[0],
@@ -322,31 +322,43 @@ class LatentToModulationMatrices(nn.Module):
             self.siren_dim_hidden
         )
 
+        last_layer_mod = nn.functional.sigmoid(last_layer_mod)
+
         return U, V, last_layer_mod
         
 
 
 class ResBlock(nn.Module):
-    def __init__(self, dim_hidden, activation=nn.LeakyReLU, use_batch_norm=True):
+    def __init__(self, dim_hidden, activation=nn.LeakyReLU, use_batch_norm=True, use_layer_norm=False, momentum=0.1):
         super().__init__()
         self.use_batch_norm=use_batch_norm
+        self.use_layer_norm=use_layer_norm
 
-        self.linear1 = nn.Linear(dim_hidden, dim_hidden)
+        if use_layer_norm and use_batch_norm:
+            raise Exception("cannot use batch norm and layer norm at the same time")
+
+        self.linear1 = nn.Linear(dim_hidden, dim_hidden, bias=(not use_batch_norm))
         self.activation1 = activation()
-        self.linear2 = nn.Linear(dim_hidden, dim_hidden)
-        if use_batch_norm:
-            self.batchnorm1 = torch.nn.BatchNorm1d(dim_hidden)
-            self.batchnorm2 = torch.nn.BatchNorm1d(dim_hidden)
+        self.linear2 = nn.Linear(dim_hidden, dim_hidden, bias=(not use_batch_norm))
         self.activation2 = activation()
+        if use_batch_norm:   
+            self.batchnorm1 = torch.nn.BatchNorm1d(dim_hidden, momentum=momentum)
+            self.batchnorm2 = torch.nn.BatchNorm1d(dim_hidden, momentum=momentum)
+        elif use_layer_norm:
+            self.layernorm1 = torch.nn.LayerNorm(dim_hidden)
+            self.layernorm2 = torch.nn.LayerNorm(dim_hidden)
 
     def forward(self, x):
         residual = x.clone()
         if self.use_batch_norm:
             x = self.activation1(self.batchnorm1(self.linear1(x)))
-            x = self.batchnorm2(self.linear2(residual))
+            x = self.batchnorm2(self.linear2(x))
+        elif self.use_layer_norm:
+            x = self.activation1(self.layernorm1(self.linear1(x)))
+            x = self.layernorm2(self.linear2(x))
         else:
             x = self.activation1(self.linear1(x))
-            x = self.linear2(residual)
+            x = self.linear2(x)
         output = x + residual
         output = self.activation2(output)
         return output
