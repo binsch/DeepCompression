@@ -327,6 +327,8 @@ class LatentToModulationMatrices(nn.Module):
             self.siren_dim_hidden
         )
 
+        last_layer_mod = nn.functional.sigmoid(last_layer_mod)
+
         return U, V, last_layer_mod
         
 
@@ -345,12 +347,13 @@ class ResBlock(nn.Module):
         self.activation2 = activation()
 
     def forward(self, x):
+        residual = x
         if self.use_batch_norm:
-            residual = self.activation1(self.batchnorm1(self.linear1(x)))
-            residual = self.batchnorm2(self.linear2(residual))
+            x = self.activation1(self.batchnorm1(self.linear1(x)))
+            x = self.batchnorm2(self.linear2(x))
         else:
-            residual = self.activation1(self.linear1(x))
-            residual = self.linear2(residual)
+            x = self.activation1(self.linear1(x))
+            x = self.linear2(x)
         output = residual + x
         output = self.activation2(output)
         return output
