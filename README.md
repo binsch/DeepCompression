@@ -1,92 +1,87 @@
-# mac_dll
+# COIN++
 
+Official implementation of [COIN++: Neural Compression Across Modalities](https://arxiv.org/abs/2201.12904).
 
+<img src="https://github.com/EmilienDupont/coinpp/raw/main/imgs/fig1.png" width="800">
 
-## Getting started
+## Requirements
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+The requirements can be found in `requirements.txt`. While it is possible to run most of the code without it, we *strongly* recommend using [wandb](https://wandb.ai/) for experiment logging and storing as this is tighly integrated with the codebase.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## Data
 
-## Add your files
+Before running experiments, make sure to set data paths in `data/dataset_paths.yml`. Most datasets can be downloaded automatically, except for [FastMRI](https://fastmri.org/) which needs an application form and ERA5 which can be downloaded [here](https://github.com/EmilienDupont/neural-function-distributions#downloading-datasets). For the FastMRI dataset, we use the `brain_multicoil_val.zip` file and split into train and test sets using the ids in `data/fastmri_split_ids.py`.
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+## Training
 
-```
-cd existing_repo
-git remote add origin https://git.rwth-aachen.de/malcolm.burdorf/mac_dll.git
-git branch -M main
-git push -uf origin main
-```
+To train a model, run
 
-## Integrate with your tools
+```python main.py @config.txt```.
 
-- [ ] [Set up project integrations](https://git.rwth-aachen.de/malcolm.burdorf/mac_dll/-/settings/integrations)
+See `config.txt` and `main.py` for setting various arguments. Note that if using wandb, you need to change the wandb entity and project name to your own.
 
-## Collaborate with your team
+A few example configs used to train the models in the paper can be found in the `configs` folder.
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Automatically merge when pipeline succeeds](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+#### Storing modulations
 
-## Test and Deploy
+Given the `wandb_run_path` from a trained model, store modulations using
 
-Use the built-in continuous integration in GitLab.
+```python store_modulations --wandb_run_path <wandb_run_path>```.
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing(SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+#### Evaluation
 
-***
+To evaluate the performance of a given modulation dataset (in terms of PSNR), run
 
-# Editing this README
+```python evaluate.py --wandb_run_path <wandb_run_path> --modulation_dataset <modulation_dataset>```.
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thank you to [makeareadme.com](https://www.makeareadme.com/) for this template.
+#### Quantization
 
-## Suggestions for a good README
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+To quantize a modulation dataset to a given bitwidth, run
 
-## Name
-Choose a self-explaining name for your project.
+```python quantization.py --wandb_run_path <wandb_run_path> --train_mod_dataset <train_mod_dataset> --test_mod_dataset <test_mod_dataset> --num_bits 5```.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+#### Entropy coding
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+To entropy code a quantized modulation dataset, run
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+```python entropy_coding.py --wandb_run_path <wandb_run_path> --train_mod_dataset <train_mod_dataset> --test_mod_dataset <test_mod_dataset>```.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+#### Saving reconstructions
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+To save reconstructions for a specific set of data points, run
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+```python reconstruction.py --wandb_run_path <wandb_run_path> --modulation_dataset <modulation_dataset> --data_indices 0 1 2 3```.
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+## Trained models and modulations [Not yet public ⚠️]
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+_The trained models, runs and modulations are not yet public as we need to share wandb runs from a private project (see this [github issue](https://github.com/wandb/client/issues/3764)). We hope to make this public soon!_
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+All models and modulations are stored on wandb. To find the link for a given model or run, see the `wandb_ids.json` files in the appropriate folder in the `results` directory. The model and run information can the be found at `wandb.ai/<wandb_id>`.
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+## Results and plots
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+To recreate all the plots in the paper run:
+
+```python plots.py```.
+
+See `plots.py` for plotting options. All results and ablations can be found in the `results` folder.
+
+## Baselines
+
+Running the baselines requires that all codecs are installed on your machine. In addition, the baseline scripts also require `tqdm` and `PIL`.
+
+#### Image baselines
+
+The image baselines used for CIFAR10, Kodak, FastMRI and ERA5 are:
+- JPEG: We use the JPEG implementation from PIL version 8.1.0.
+- JPEG2000: We use the JPEG2000 implementation from OpenJPEG version 2.4.0.
+- BPG: We use BPG version 0.9.8.
+
+#### Audio baselines
+
+The audio baseline used for LibriSpeech is:
+- MP3: We use the MP3 implementation from LAME version 3.100.
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+MIT
