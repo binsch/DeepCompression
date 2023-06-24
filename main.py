@@ -193,7 +193,7 @@ def add_arguments(parser):
 
     parser.add_argument(
         "--inner_step_boot",
-        help="Number of inner steps for bootstrapping (K)",
+        help="Number of inner steps for bootstrapping (L)",
         type=int,
         default=3
     )

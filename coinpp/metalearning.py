@@ -14,6 +14,7 @@ def inner_loop(
     inner_steps,
     inner_lr,
     is_train=False,
+    is_test=True,
     gradient_checkpointing=False,
     do_sampling=False,
     do_bootstrapping=False,
@@ -41,9 +42,6 @@ def inner_loop(
         features_tmp = rearrange(features, 'b h w c -> b c (h w)')
         inputs = torch.gather(features_tmp, 2, sampled_index)
         sampled_features = rearrange(inputs, 'b c s -> b s c')
-        coordinates = sampled_coordinates
-        features = sampled_features
-
     
     fitted_modulations = modulations
     for step in range(inner_steps):
@@ -64,21 +62,28 @@ def inner_loop(
                 fitted_modulations,
                 coordinates,
                 features,
+                sampled_coordinates,
+                sampled_features,
                 inner_lr,
                 is_train,
+                is_test,
                 gradient_checkpointing,
             )
 
     if do_bootstrapping:
       fitted_mods_L = fitted_modulations
+      # perform on full context set
       for step in range(inner_steps_boot):
               fitted_modulations = inner_loop_step(
                   func_rep,
                   fitted_modulations,
                   coordinates,
                   features,
+                  coordinates,
+                  features,
                   inner_lr,
                   is_train=False,
+                  is_test=False,
                   gradient_checkpointing=False,
               )
       fitted_mods_K = fitted_modulations
@@ -92,21 +97,27 @@ def inner_loop_step(
     modulations,
     coordinates,
     features,
+    sampled_coordinates,
+    sampled_features,
     inner_lr,
     is_train=False,
+    is_test=True,
     gradient_checkpointing=False,
+    data_ratio=0.5
 ):
     """Performs a single inner loop step."""
     detach = not torch.is_grad_enabled() and gradient_checkpointing
     batch_size = len(features)
 
+    
+
     with torch.enable_grad():
-        features_recon = func_rep.modulated_forward(coordinates, modulations)
+        features_recon = func_rep.modulated_forward(sampled_coordinates, modulations)
         # Note we multiply by batch size here to undo the averaging across batch
         # elements from the MSE function. Indeed, each set of modulations is fit
         # independently and the size of the gradient should not depend on how
         # many elements are in the batch
-        loss = losses.mse_fn(features_recon, features) * batch_size
+        loss = losses.mse_fn(features_recon, sampled_features) * batch_size
         # If we are training, we should create graph since we will need this to
         # compute second order gradients in the MAML outer loop
         grad = torch.autograd.grad(
@@ -114,8 +125,33 @@ def inner_loop_step(
             modulations,
             create_graph=is_train and not detach,
         )[0]
+    
+    #gradient rescaling (only at test time)
+    grads_scale = 1
+    if is_train==False and is_test==True:
+      subsample_grad = grad
+
+      with torch.enable_grad():
+          features_recon = func_rep.modulated_forward(coordinates, modulations)
+          loss = losses.mse_fn(features_recon, features)* batch_size
+
+          grad = torch.autograd.grad(
+              loss,
+              modulations,
+              create_graph=is_train and not detach,
+              allow_unused=True
+          )[0]
+          subsample_grad_norm= torch.norm(
+                  subsample_grad.data.view(batch_size, -1), p=2, dim=1, keepdim=True
+              )
+          grads_norm = torch.norm(
+                  grad.data.view(batch_size, -1), p=2, dim=1, keepdim=True
+              )
+          grads_scale = subsample_grad_norm / (grads_norm + 1e-16)
+
+    
     # Perform single gradient descent step
-    return modulations - func_rep.inner_lr * grad
+    return modulations - func_rep.inner_lr * grads_scale * grad
 
 
 def outer_step(
@@ -125,6 +161,7 @@ def outer_step(
     inner_steps,
     inner_lr,
     is_train=False,
+    is_test=True,
     return_reconstructions=False,
     gradient_checkpointing=False,
     do_sampling=False,
@@ -155,6 +192,7 @@ def outer_step(
         inner_steps,
         inner_lr,
         is_train,
+        is_test,
         gradient_checkpointing,
         do_sampling,
         do_bootstrapping,

@@ -15,3 +15,7 @@
 --use_wandb=0
 --wandb_project_name=your_project
 --wandb_entity=your_entity
+--patch_shape
+8
+16
+16

@@ -96,6 +96,7 @@ class Trainer:
                 inner_steps=self.args.inner_steps,
                 inner_lr=self.args.inner_lr,
                 is_train=True,
+                is_test=False,
                 return_reconstructions=False,
                 gradient_checkpointing=self.args.gradient_checkpointing,
                 do_sampling=self.args.do_sampling,
@@ -201,9 +202,15 @@ class Trainer:
                         inner_steps=inner_steps,
                         inner_lr=self.args.inner_lr,
                         is_train=False,
+                        is_test=True,
                         return_reconstructions=True,
                         gradient_checkpointing=self.args.gradient_checkpointing,
-                    )
+                        do_sampling=self.args.do_sampling,
+                        do_bootstrapping=False,
+                        inner_steps_boot=0,
+                        data_ratio=self.args.data_ratio,
+                        loss_boot_weight=0
+                            )
 
                     log_dict[f"val_psnr_{inner_steps}_steps"] += outputs["psnr"]
                     log_dict[f"val_loss_{inner_steps}_steps"] += outputs["loss"].item()

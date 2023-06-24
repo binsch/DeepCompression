@@ -8,7 +8,7 @@
 --num_epochs=500
 --train_dataset=cifar10
 --test_dataset=cifar10
---gradient_checkpointing=1
+--gradient_checkpointing=0
 --num_validation_points=-1
 --validate_every=2000
 --do_sampling=1
