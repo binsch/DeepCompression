@@ -1,7 +1,10 @@
 import coinpp.losses as losses
+import coinpp.conversion as conversion
 import torch
 import torch.utils.checkpoint as cp
-
+import torch.nn as nn
+import torch.nn.functional as F
+from einops import rearrange
 
 def inner_loop(
     func_rep,
@@ -12,6 +15,10 @@ def inner_loop(
     inner_lr,
     is_train=False,
     gradient_checkpointing=False,
+    do_sampling=False,
+    do_bootstrapping=False,
+    inner_steps_boot=3,
+    data_ratio=0.5
 ):
     """Performs inner loop, i.e. fits modulations such that the function
     representation can match the target features.
@@ -29,6 +36,15 @@ def inner_loop(
         gradient_checkpointing (bool): If True uses gradient checkpointing. This
             can massively reduce memory consumption.
     """
+    if do_sampling == True:
+        sampled_coordinates, sampled_index= gradncp_sample(features, func_rep, data_ratio)
+        features_tmp = rearrange(features, 'b h w c -> b c (h w)')
+        inputs = torch.gather(features_tmp, 2, sampled_index)
+        sampled_features = rearrange(inputs, 'b c s -> b s c')
+        coordinates = sampled_coordinates
+        features = sampled_features
+
+    
     fitted_modulations = modulations
     for step in range(inner_steps):
         if gradient_checkpointing:
@@ -52,7 +68,23 @@ def inner_loop(
                 is_train,
                 gradient_checkpointing,
             )
-    return fitted_modulations
+
+    if do_bootstrapping:
+      fitted_mods_L = fitted_modulations
+      for step in range(inner_steps_boot):
+              fitted_modulations = inner_loop_step(
+                  func_rep,
+                  fitted_modulations,
+                  coordinates,
+                  features,
+                  inner_lr,
+                  is_train=False,
+                  gradient_checkpointing=False,
+              )
+      fitted_mods_K = fitted_modulations
+      return fitted_mods_L, fitted_mods_K
+    
+    return fitted_modulations, None
 
 
 def inner_loop_step(
@@ -95,9 +127,13 @@ def outer_step(
     is_train=False,
     return_reconstructions=False,
     gradient_checkpointing=False,
+    do_sampling=False,
+    do_bootstrapping=False,
+    inner_steps_boot=3,
+    data_ratio=0.5,
+    loss_boot_weight=1.
 ):
     """
-
     Args:
         coordinates (torch.Tensor): Shape (batch_size, *, coordinate_dim). Note this
             _must_ have a batch dimension.
@@ -111,7 +147,7 @@ def outer_step(
     ).requires_grad_()
 
     # Run inner loop
-    modulations = inner_loop(
+    modulations, modulations_boot = inner_loop(
         func_rep,
         modulations_init,
         coordinates,
@@ -120,6 +156,10 @@ def outer_step(
         inner_lr,
         is_train,
         gradient_checkpointing,
+        do_sampling,
+        do_bootstrapping,
+        inner_steps_boot,
+        data_ratio
     )
 
     with torch.set_grad_enabled(is_train):
@@ -133,6 +173,10 @@ def outer_step(
         per_example_loss = losses.batch_mse_fn(features_recon, features)
         # Shape (1,)
         loss = per_example_loss.mean()
+
+    if do_bootstrapping:
+      loss_boot = loss_boot_weight*param_consistency(modulations, modulations_boot, batch_size)
+      loss = loss + loss_boot
 
     outputs = {
         "loss": loss,
@@ -220,3 +264,56 @@ def outer_step_chunked(
         "reconstructions": torch.cat(reconstructions, dim=0),
         "modulations": torch.cat(modulations, dim=0),
     }
+
+
+#Functions to perform and aid in sampling for GradNCP
+
+def shape_to_coords(spatial_shape):
+    coords = []
+    for i in range(len(spatial_shape)):
+        coords.append(torch.linspace(-1.0, 1.0, spatial_shape[i]))
+    return torch.stack(torch.meshgrid(*coords), dim=-1)
+
+def gradncp_sample(inputs, func_rep, data_ratio=0.5):
+    ratio = data_ratio
+    coords = rearrange(conversion.shape2coordinates((inputs.shape[1], inputs.shape[2])), 'h w c -> (h w) c')
+    meta_batch_size = inputs.size(0)
+    coords = coords.clone().detach()[None, ...].repeat((meta_batch_size,) + (1,) * len(coords.shape)).to("cuda")
+    with torch.no_grad():
+        out, feature = func_rep(coords, get_penult_features=True)
+        if 'img' in ['img']:
+            out = rearrange(out, 'b hw c -> b c hw')
+            feature = rearrange(feature, 'b hw f -> b f hw')
+            inputs = rearrange(inputs, 'b h w c -> b c (h w)')
+        else:
+            raise NotImplementedError()
+        error = inputs - out  # b c (hw)
+        gradient = -1 * feature.unsqueeze(dim=1) * error.unsqueeze(dim=2)  # b c f hw
+        gradient_bias = -1 * error.unsqueeze(dim=2)  # b c hw
+        gradient = torch.cat([gradient, gradient_bias], dim=2)
+        gradient = rearrange(gradient, 'b c f hw -> b (c f) hw')
+        gradient_norm = torch.norm(gradient, dim=1)  # b hw
+        coords_len = gradient_norm.size(1)
+
+    gradncp_index = torch.sort(
+        gradient_norm, dim=1, descending=True
+    )[1][:, :int(coords_len * ratio)]  # b int(hw * ratio)
+
+    gradncp_coord = torch.gather(
+        coords, 1, gradncp_index.unsqueeze(dim=2).repeat(1, 1, 2)
+    )
+    gradncp_index = gradncp_index.unsqueeze(dim=1).repeat(1, 3, 1)
+
+    return gradncp_coord, gradncp_index
+
+def random_sample(inputs):
+    grid = rearrange(conversion.shape2coordinates((inputs.shape[1], inputs.shape[2])), 'h w c -> (h w) c')
+    coord_size = grid.size(0)  # shape (h * w, c)
+    perm = torch.randperm(coord_size)
+
+def param_consistency(params, params_bootstrap, bs):
+    updated_param = params_bootstrap.detach() - params
+    updated_param = updated_param.view(bs, -1)
+    param_norm = torch.norm(updated_param, p=2, dim=1).mean()
+    return param_norm
+

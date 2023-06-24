@@ -5,7 +5,9 @@ import data.era5 as era5
 import data.fastmri as fastmri
 import data.image as image
 import data.vimeo90k as vimeo90k
+import data.video as video
 import torchvision
+import torchvision.transforms._transforms_video as t
 import yaml
 from pathlib import Path
 
@@ -32,6 +34,9 @@ def dataset_name_to_dims(dataset_name):
     if dataset_name == "librispeech":
         dim_in = 1
         dim_out = 1
+    if dataset_name == "ucf101":
+      dim_in = 3
+      dim_out = 3
     return dim_in, dim_out
 
 
@@ -54,6 +59,8 @@ def get_datasets_and_converter(args, force_no_random_crop=False):
     if use_patching:
         if dim_in == 2:
             random_crop = torchvision.transforms.RandomCrop(args.patch_shape)
+        if dim_in == 3:
+            random_crop = t.RandomCropVideo(args.patch_shape)
 
     if "mnist" in (args.train_dataset, args.test_dataset):
         converter = conversion.Converter("image")
@@ -67,6 +74,34 @@ def get_datasets_and_converter(args, force_no_random_crop=False):
             )
         if args.test_dataset == "mnist":
             test_dataset = image.MNIST(root=get_dataset_root("mnist"), train=False, download=True)
+
+    if "ucf101" in (args.train_dataset, args.test_dataset):
+      converter = conversion.Converter("video")
+
+      if args.train_dataset == "ucf101":
+        transforms = [t.ToTensorVideo(),
+        t.CenterCropVideo(240),
+        torchvision.transforms.Resize((128, 128))]
+        if use_patching and not force_no_random_crop:
+          transforms.append(random_crop)
+
+        train_dataset = video.UCF101(
+                root=get_dataset_root("ucf101"),
+                annotation_path="/content/drive/MyDrive/DLLab/datasets/UCF101/ucfTrainTestlist",
+                frames_per_clip=24,
+                train=True,
+                transform=torchvision.transforms.Compose(transforms),
+            )
+
+            #print(train_dataset.size)
+        if args.test_dataset == "ucf101":
+            test_dataset = video.UCF101(
+                root=get_dataset_root("ucf101"),
+                annotation_path="/content/drive/MyDrive/DLLab/datasets/UCF101/ucfTrainTestlist",
+                frames_per_clip=24,
+                train=False,
+                transform=torchvision.transforms.Compose(transforms),
+            )
 
     if "cifar10" in (args.train_dataset, args.test_dataset):
         converter = conversion.Converter("image")

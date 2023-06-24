@@ -13,7 +13,7 @@ class Converter:
     """
 
     def __init__(self, data_type="image"):
-        assert data_type in ("image", "mri", "era5", "audio")
+        assert data_type in ("image", "mri", "era5", "audio", "video")
         self.data_type = data_type
         self.coordinates = None
 
@@ -75,6 +75,21 @@ class Converter:
                 coordinates = self.coordinates
                 features = data2features(data, batched=False)
             return coordinates, features
+
+        elif self.data_type == "video":
+          if self.coordinates == None:
+            # Data has shape ({batch_size,} channels, frames, height, width)
+            self.coordinates = shape2coordinates(data.shape[-3:]).to(data.device)
+
+          # If data has 5 dimensions, it is batched
+          if data.ndim == 5:
+            coordinates = repeat_coordinates(self.coordinates,data.shape[0])
+            features = data2features(data,batched=True)
+          else:
+            coordinates = self.coordinates
+            feautres= data2features(data, batched=False)
+          return coordinates, features
+
 
     def to_data(self, coordinates, features):
         """

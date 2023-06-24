@@ -3,4 +3,5 @@ cifar10: ../datasets/CIFAR10
 kodak: ../datasets/kodak
 fastmri: ../datasets/fastmri
 era5: ../datasets/era5
-librispeech: ../datasets/librispeech
+librispeech: ../datasets/librispeech]
+ucf101: ../datasets/UCF101/UCF-101

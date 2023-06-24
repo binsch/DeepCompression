@@ -38,6 +38,8 @@ class Trainer:
             self.func_rep.parameters(), lr=args.outer_lr
         )
 
+        #outer_optimizer = torch.load('/content/drive/MyDrive/DLLab/mac_dll/wandb/run-20230612_202848-56oj2en6/files/model.pt')['optimizer_state_dict']
+
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
         self._process_datasets()
@@ -96,6 +98,11 @@ class Trainer:
                 is_train=True,
                 return_reconstructions=False,
                 gradient_checkpointing=self.args.gradient_checkpointing,
+                do_sampling=self.args.do_sampling,
+                do_bootstrapping=self.args.do_bootstrapping,
+                inner_steps_boot=self.args.inner_step_boot,
+                data_ratio=self.args.data_ratio,
+                loss_boot_weight=self.args.loss_boot_weight
             )
 
             # Update parameters of base network
@@ -237,6 +244,8 @@ class Trainer:
                 reconstruction = self.converter.to_data(
                     None, outputs["reconstructions"]
                 )
+
+                torch.save(reconstruction, "era5_reconstruction_metasgd.pt" )
                 if self.patcher:
                     # If using patches, unpatch the reconstruction
                     # Shape (channels, *spatial_dims)

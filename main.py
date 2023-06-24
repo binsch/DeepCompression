@@ -54,7 +54,7 @@ def add_arguments(parser):
         "--use_batch_norm",
         help="Use batch norm in modulation net ResBlocks.",
         type=int,
-        default=1,
+        default=0,
     )
 
     parser.add_argument(
@@ -106,6 +106,7 @@ def add_arguments(parser):
             "era5",
             "vimeo90k",
             "librispeech",
+            "ucf101"
         ),
     )
 
@@ -120,6 +121,7 @@ def add_arguments(parser):
             "era5",
             "vimeo90k",
             "librispeech",
+            "ucf101"
         ),
     )
 
@@ -172,6 +174,48 @@ def add_arguments(parser):
         help="Number of coordinate points to subsample during training. If -1, uses full datapoint/patch.",
         type=int,
         default=-1,
+    )
+
+    # GradNCP arguments
+    parser.add_argument(
+        "--do_sampling",
+        help="Whether to perform GradNCP sampling or not",
+        type=int,
+        default=0
+    )
+
+    parser.add_argument(
+        "--do_bootstrapping",
+        help="Whether to perform bootstrapping or not",
+        type=int,
+        default=0
+    )
+
+    parser.add_argument(
+        "--inner_step_boot",
+        help="Number of inner steps for bootstrapping (K)",
+        type=int,
+        default=3
+    )
+
+    parser.add_argument(
+        '--inner_lr_boot', 
+        type=float, 
+        default=5.e-2,
+        help='learning rate of inner gradients')
+
+    parser.add_argument(
+      "--data_ratio",
+      help="what percentage of context points to sample for gradncp",
+      type=float,
+      default=.5
+    )
+
+    parser.add_argument(
+      "--loss_boot_weight",
+      help="bootstrapped loss weighting in overall loss",
+      type=float,
+      default=1.
     )
 
     # Wandb arguments
@@ -233,6 +277,8 @@ def main(args):
     model = helpers.get_model(args)
     model.define_inner_lr_params(args.latent_dim, args.device)
 
+    #model.load_state_dict(torch.load('/content/drive/MyDrive/DLLab/mac_dll/wandb/run-20230613_100424-wpihkyba/files/model.pt')['model_state_dict'])
+
     print(model)
     print(args)
 
@@ -257,6 +303,8 @@ def main(args):
         patcher=patcher,
         model_path=model_path,
     )
+
+    #trainer.validation()
 
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}:")
