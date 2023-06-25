@@ -56,11 +56,13 @@ def get_datasets_and_converter(args, force_no_random_crop=False):
     # When using patching, perform random crops equal to patch size on training
     # dataset
     use_patching = hasattr(args, "patch_shape") and args.patch_shape != [-1]
+    print(args.patch_shape)
+    print(args.patch_shape[-2:])
     if use_patching:
         if dim_in == 2:
             random_crop = torchvision.transforms.RandomCrop(args.patch_shape)
         if dim_in == 3:
-            random_crop = t.RandomCropVideo(args.patch_shape)
+            random_crop = t.RandomCropVideo(args.patch_shape[-2:])
 
     if "mnist" in (args.train_dataset, args.test_dataset):
         converter = conversion.Converter("image")
@@ -75,33 +77,6 @@ def get_datasets_and_converter(args, force_no_random_crop=False):
         if args.test_dataset == "mnist":
             test_dataset = image.MNIST(root=get_dataset_root("mnist"), train=False, download=True)
 
-    if "ucf101" in (args.train_dataset, args.test_dataset):
-      converter = conversion.Converter("video")
-
-      if args.train_dataset == "ucf101":
-        transforms = [t.ToTensorVideo(),
-        t.CenterCropVideo(240),
-        torchvision.transforms.Resize((128, 128))]
-        if use_patching and not force_no_random_crop:
-          transforms.append(random_crop)
-
-        train_dataset = video.UCF101(
-                root=get_dataset_root("ucf101"),
-                annotation_path="/content/drive/MyDrive/DLLab/datasets/UCF101/ucfTrainTestlist",
-                frames_per_clip=24,
-                train=True,
-                transform=torchvision.transforms.Compose(transforms),
-            )
-
-            #print(train_dataset.size)
-        if args.test_dataset == "ucf101":
-            test_dataset = video.UCF101(
-                root=get_dataset_root("ucf101"),
-                annotation_path="/content/drive/MyDrive/DLLab/datasets/UCF101/ucfTrainTestlist",
-                frames_per_clip=24,
-                train=False,
-                transform=torchvision.transforms.Compose(transforms),
-            )
 
     if "cifar10" in (args.train_dataset, args.test_dataset):
         converter = conversion.Converter("image")
@@ -164,6 +139,34 @@ def get_datasets_and_converter(args, force_no_random_crop=False):
                 root=get_dataset_root("fastmri"),
                 split="val",
                 challenge="multicoil",
+            )
+
+    if "ucf101" in (args.train_dataset, args.test_dataset):
+      converter = conversion.Converter("video")
+
+      if args.train_dataset == "ucf101":
+        transforms = [t.ToTensorVideo(),
+        t.CenterCropVideo(240),
+        torchvision.transforms.Resize((128, 128))]
+
+        train_dataset = video.UCF101(
+                root=get_dataset_root("ucf101"),
+                annotation_path="/content/drive/MyDrive/DLLab/datasets/UCF101/ucfTrainTestlist",
+                frames_per_clip=24,
+                train=True,
+                transform=torchvision.transforms.Compose(transforms),
+                patch_shape=[8,16,16]
+            )
+
+            #print(train_dataset.size)
+        if args.test_dataset == "ucf101":
+            test_dataset = video.UCF101(
+                root=get_dataset_root("ucf101"),
+                annotation_path="/content/drive/MyDrive/DLLab/datasets/UCF101/ucfTrainTestlist",
+                frames_per_clip=24,
+                train=False,
+                transform=torchvision.transforms.Compose(transforms),
+                patch_shape=[8,16,16]
             )
 
     if "era5" in (args.train_dataset, args.test_dataset):

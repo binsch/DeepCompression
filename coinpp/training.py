@@ -3,6 +3,7 @@ import coinpp.losses as losses
 import coinpp.metalearning as metalearning
 import torch
 import wandb
+#import pdb
 
 
 class Trainer:
@@ -89,6 +90,9 @@ class Trainer:
                 coordinates = coordinates[:, idx, :]
                 features = features[:, idx, :]
 
+            #print(coordinates.shape)
+            #print(features.shape)
+            #pdb.set_trace()
             outputs = metalearning.outer_step(
                 self.func_rep,
                 coordinates,

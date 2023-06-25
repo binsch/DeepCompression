@@ -8,9 +8,11 @@
 --num_epochs=500
 --train_dataset=ucf101
 --test_dataset=ucf101
---gradient_checkpointing=1
+--gradient_checkpointing=0
 --num_validation_points=-1
 --validate_every=2000
+--do_sampling=0
+--do_bootstrapping=0
 --validation_inner_steps=3
 --use_wandb=0
 --wandb_project_name=your_project

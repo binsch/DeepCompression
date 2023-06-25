@@ -78,7 +78,7 @@ class Converter:
 
         elif self.data_type == "video":
           if self.coordinates == None:
-            # Data has shape ({batch_size,} channels, frames, height, width)
+            # Data has shape ({batch_size,} frames, height, width, channels) (at least for ucf101)
             self.coordinates = shape2coordinates(data.shape[-3:]).to(data.device)
 
           # If data has 5 dimensions, it is batched

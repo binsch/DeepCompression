@@ -37,6 +37,9 @@ def inner_loop(
         gradient_checkpointing (bool): If True uses gradient checkpointing. This
             can massively reduce memory consumption.
     """
+
+    sampled_coordinates = coordinates
+    sampled_features = features
     if do_sampling == True:
         sampled_coordinates, sampled_index= gradncp_sample(features, func_rep, data_ratio)
         features_tmp = rearrange(features, 'b h w c -> b c (h w)')
@@ -343,11 +346,6 @@ def gradncp_sample(inputs, func_rep, data_ratio=0.5):
     gradncp_index = gradncp_index.unsqueeze(dim=1).repeat(1, 3, 1)
 
     return gradncp_coord, gradncp_index
-
-def random_sample(inputs):
-    grid = rearrange(conversion.shape2coordinates((inputs.shape[1], inputs.shape[2])), 'h w c -> (h w) c')
-    coord_size = grid.size(0)  # shape (h * w, c)
-    perm = torch.randperm(coord_size)
 
 def param_consistency(params, params_bootstrap, bs):
     updated_param = params_bootstrap.detach() - params
