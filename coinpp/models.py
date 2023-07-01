@@ -300,7 +300,7 @@ class LatentToModulationMatrices(nn.Module):
             layers.append(ResBlock(modulation_net_dim_hidden, use_batch_norm=use_batch_norm))
 
         # The last layer maps from the hidden dim of the ResBlock to the correct output length
-        layers += [nn.Linear(modulation_net_dim_hidden, self.modulation_net_dim_out), nn.LeakyReLU()]
+        layers += [nn.Linear(modulation_net_dim_hidden, self.modulation_net_dim_out)]
         self.net = nn.Sequential(*layers)
 
         self.layer_norm = nn.LayerNorm(latent_dim)
