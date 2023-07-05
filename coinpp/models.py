@@ -258,7 +258,7 @@ class ModulatedSiren(Siren):
         return out.view(*x_shape, out.shape[-1])
 
 
-class LatentToModulationMatrices(nn.Module):
+class ResNet(nn.Module):
     """Maps a latent vector to a set of modulation matrices.
 
     Args:
@@ -272,16 +272,36 @@ class LatentToModulationMatrices(nn.Module):
         siren_dim_out (int): Dimension of the output of the ModulatedSiren net.
     """
 
-    def __init__(self, latent_dim, num_hidden_modulation_matrices, modulation_net_dim_hidden, modulation_net_num_res_blocks,
-                 UV_rank, siren_dim_hidden, use_batch_norm=True, siren_dim_out=None):
+    def __init__(self, input_dim, output_dim, hidden_dim, num_res_blocks, use_batch_norm=True, activation='leaky'):
         super().__init__()
-        self.latent_dim = latent_dim
-        self.num_hidden_modulation_matrices = num_hidden_modulation_matrices
-        self.modulation_net_dim_hidden = modulation_net_dim_hidden
-        self.UV_rank = UV_rank
-        self.siren_dim_hidden = siren_dim_hidden
-        self.siren_dim_out = siren_dim_out
+        assert activation in ['leaky', 'selu']
+        self.activation = nn.LeakyReLU if activation == 'leaky' else nn.SELU
 
+        # The initial layer projects the latent space representation onto a vector that can be used as input for the first ResBlock
+        layers = [nn.Linear(input_dim, hidden_dim), self.activation()]
+
+        # Generate ResBlocks
+        for _ in range(num_res_blocks):
+            layers.append(ResBlock(hidden_dim, use_batch_norm=use_batch_norm))
+
+        # The last layer maps from the hidden dim of the ResBlock to the correct output length
+        layers += [nn.Linear(hidden_dim, output_dim)]
+        self.net = nn.Sequential(*layers)
+
+
+    def forward(self, x):
+        return self.net(x)
+        
+
+class LatentToModulationMatrices(ResNet):
+    def __init__(self, latent_dim, num_hidden_modulation_matrices, modulation_net_dim_hidden, modulation_net_num_res_blocks,
+        UV_rank, siren_dim_hidden, use_batch_norm=True, siren_dim_out=None, activation='leaky'):
+        
+        self.latent_dim = latent_dim
+        self.siren_dim_out = siren_dim_out
+        self.siren_dim_hidden = siren_dim_hidden
+        self.UV_rank = UV_rank
+        self.num_hidden_modulation_matrices = num_hidden_modulation_matrices
         # U, V are 2 matrices of dim (siren_dim_hidden x UV_rank) for each hidden layer of the ModulatedSiren
         self.UV_end_idx = 2 * siren_dim_hidden * UV_rank * num_hidden_modulation_matrices
         # If the last layer is also modulated, we need to generate an additional modulation matrix for it
@@ -289,21 +309,19 @@ class LatentToModulationMatrices(nn.Module):
         # because it is low dimensional (siren_dim_hidden x siren_dim_out) where siren_dim_out is usually in the single digits.
         self.modulation_net_dim_out = (
             self.UV_end_idx +
-            (self.siren_dim_out * self.siren_dim_hidden if self.siren_dim_out is not None else 0)
+            (self.siren_dim_out * siren_dim_hidden if self.siren_dim_out is not None else 0)
         )
 
-        # The initial layer projects the latent space representation onto a vector that can be used as input for the first ResBlock
-        layers = [nn.Linear(latent_dim, modulation_net_dim_hidden), nn.LeakyReLU()]
-
-        # Generate ResBlocks
-        for _ in range(modulation_net_num_res_blocks):
-            layers.append(ResBlock(modulation_net_dim_hidden, use_batch_norm=use_batch_norm))
-
-        # The last layer maps from the hidden dim of the ResBlock to the correct output length
-        layers += [nn.Linear(modulation_net_dim_hidden, self.modulation_net_dim_out), nn.LeakyReLU()]
-        self.net = nn.Sequential(*layers)
-
+        super().__init__(
+            latent_dim,
+            self.modulation_net_dim_out,
+            modulation_net_dim_hidden,
+            modulation_net_num_res_blocks,
+            use_batch_norm=use_batch_norm,
+            activation=activation
+        )
         self.layer_norm = nn.LayerNorm(latent_dim)
+    
 
     def forward(self, latent):
         out = self.layer_norm(latent)
@@ -330,7 +348,15 @@ class LatentToModulationMatrices(nn.Module):
         last_layer_mod = nn.functional.sigmoid(last_layer_mod)
 
         return U, V, last_layer_mod
-        
+
+
+class AnalysisTransform(ResNet):
+    def __init__(self, input_dim, encoding_dim, hidden_dim, num_res_blocks, use_batch_norm=True, activation='selu'):
+        super().__init__(input_dim, encoding_dim, hidden_dim, num_res_blocks, use_batch_norm, activation)
+
+class SynthesisTransform(ResNet):
+    def __init__(self, encoding_dim, output_dim, hidden_dim, num_res_blocks, use_batch_norm=True, activation='selu'):
+        super().__init__(encoding_dim, output_dim, hidden_dim, num_res_blocks, use_batch_norm, activation)
 
 
 class ResBlock(nn.Module):
