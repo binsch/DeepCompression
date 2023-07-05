@@ -291,7 +291,7 @@ class ResNet(nn.Module):
 
     def forward(self, x):
         return self.net(x)
-        
+
 
 class LatentToModulationMatrices(ResNet):
     def __init__(self, latent_dim, num_hidden_modulation_matrices, modulation_net_dim_hidden, modulation_net_num_res_blocks,
