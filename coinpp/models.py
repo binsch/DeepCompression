@@ -354,6 +354,7 @@ class AnalysisTransform(ResNet):
     def __init__(self, input_dim, encoding_dim, hidden_dim, num_res_blocks, use_batch_norm=True, activation='selu'):
         super().__init__(input_dim, encoding_dim, hidden_dim, num_res_blocks, use_batch_norm, activation)
 
+
 class SynthesisTransform(ResNet):
     def __init__(self, encoding_dim, output_dim, hidden_dim, num_res_blocks, use_batch_norm=True, activation='selu'):
         super().__init__(encoding_dim, output_dim, hidden_dim, num_res_blocks, use_batch_norm, activation)
