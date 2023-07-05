@@ -1,20 +1,25 @@
-import coinpp.conversion as conversion
-import coinpp.losses as losses
-import coinpp.metalearning as metalearning
+from coinpp.modulation_dataset import ModulationDataset
 import torch
+from torch.utils.data.sampler import SubsetRandomSampler
+from torch.utils.data import DataLoader
+from torch.nn.functional import mse_loss
+from coinpp.models import AnalysisTransform, SynthesisTransform
+import numpy as np
 import wandb
-
+from itertools import chain
 
 class QuantizationTrainer:
     def __init__(
         self,
-        func_rep,
-        converter,
-        args,
-        train_dataset,
-        test_dataset,
-        patcher=None,
+        analysis_tranform,
+        synthesis_transform,
+        modulation_dataset,
+        batch_size=32,
+        validation_split=0.2,
+        lr=1e-4,
         model_path="",
+        device="cuda:0",
+        use_wandb=False
     ):
         """Module to handle quantization learning.
 
@@ -29,242 +34,151 @@ class QuantizationTrainer:
             model_path: If not empty, wandb path where best (validation) model
                 will be saved.
         """
-        self.func_rep = func_rep
-        self.converter = converter
-        self.args = args
-        self.patcher = patcher
+        self.analysis_transform = analysis_tranform
+        self.synthesis_transform = synthesis_transform
 
-        self.outer_optimizer = torch.optim.Adam(
-            self.func_rep.parameters(), lr=args.outer_lr
+        self.optimizer = torch.optim.Adam(
+            chain(self.analysis_transform.parameters(), self.synthesis_transform.parameters()),
+            lr=lr
         )
 
-        self.train_dataset = train_dataset
-        self.test_dataset = test_dataset
-        self._process_datasets()
+        self.train_dataloader, self.val_dataloader = self._process_datasets(modulation_dataset, batch_size, validation_split)
 
         self.model_path = model_path
         self.step = 0
-        self.best_val_psnr = 0.0
+        self.best_val_loss = 999999
+        self.device = device
+        self.use_wandb = use_wandb
 
-    def _process_datasets(self):
-        """Create dataloaders for datasets based on self.args."""
-        self.train_dataloader = torch.utils.data.DataLoader(
-            self.train_dataset,
-            shuffle=True,
-            batch_size=self.args.batch_size,
-            num_workers=self.args.num_workers,
-            pin_memory=self.args.num_workers > 0,
-        )
 
-        # If we are using patching, require data loader to have a batch size of 1,
-        # since we can potentially have different sized outputs which cannot be batched
-        self.test_dataloader = torch.utils.data.DataLoader(
-            self.test_dataset,
-            shuffle=False,
-            batch_size=1 if self.patcher else self.args.batch_size,
-            num_workers=self.args.num_workers,
-        )
+    def _process_datasets(self, dataset, batch_size, validation_split, shuffle_dataset=True):
+        dataset_size = len(dataset)
+        indices = list(range(dataset_size))
+        split = int(validation_split * dataset_size)
+        if shuffle_dataset:
+            np.random.shuffle(indices)
+        train_indices, val_indices = indices[split:], indices[:split]
+
+        train_sampler = SubsetRandomSampler(train_indices)
+        val_sampler = SubsetRandomSampler(val_indices)
+
+        train_dataloader = DataLoader(dataset, batch_size=batch_size, sampler=train_sampler)
+        val_dataloader = DataLoader(dataset, batch_size=batch_size, sampler=val_sampler)
+
+        return train_dataloader, val_dataloader
 
     def train_epoch(self):
         """Train model for a single epoch."""
         for data in self.train_dataloader:
-            data = data.to(self.args.device)
-            coordinates, features = self.converter.to_coordinates_and_features(data)
+            self.optimizer.zero_grad()
+            data = data.to(self.device)
 
-            # Optionally subsample points
-            if self.args.subsample_num_points != -1:
-                # Coordinates have shape (batch_size, *, coordinate_dim)
-                # Features have shape (batch_size, *, feature_dim)
-                # Flatten both along spatial dimension and randomly select points
-                coordinates = coordinates.reshape(
-                    coordinates.shape[0], -1, coordinates.shape[-1]
-                )
-                features = features.reshape(features.shape[0], -1, features.shape[-1])
-                # Compute random indices (no good pytorch function to do this,
-                # so do it this slightly hacky way)
-                permutation = torch.randperm(coordinates.shape[1])
-                idx = permutation[: self.args.subsample_num_points]
-                coordinates = coordinates[:, idx, :]
-                features = features[:, idx, :]
+            entropy_codes = self.analysis_transform(data)
+            reconstructions = self.synthesis_transform(entropy_codes)
 
-            outputs = metalearning.outer_step(
-                self.func_rep,
-                coordinates,
-                features,
-                inner_steps=self.args.inner_steps,
-                inner_lr=self.args.inner_lr,
-                is_train=True,
-                return_reconstructions=False,
-                gradient_checkpointing=self.args.gradient_checkpointing,
-            )
-
-            # Update parameters of base network
-            self.outer_optimizer.zero_grad()
-            outputs["loss"].backward(create_graph=False)
-            self.outer_optimizer.step()
-
-            #tmp = self.func_rep.inner_lr.clone()
-            #tmp.clamp_(-5, 5)
-            #self.func_rep.inner_lr.data = tmp.clone().requires_grad_()
-
-            if self.step % self.args.validate_every == 0 and self.step != 0:
-                self.validation()
-
-            log_dict = {"loss": outputs["loss"].item(), "psnr": outputs["psnr"]}
+            # Update parameters of the networks
+            loss = mse_loss(data, reconstructions)
+            loss.backward()
+            self.optimizer.step()
 
             self.step += 1
 
             torch.set_printoptions(precision=25)
             print(
-                f'Step {self.step}, Loss {log_dict["loss"]:.3f}, PSNR {log_dict["psnr"]:.3f}, min_inner_lr {torch.min(self.func_rep.inner_lr)}, max_inner_lr {torch.max(self.func_rep.inner_lr)}'
+                f'Step {self.step}, Loss {loss:.8f}'
             )
 
-            if self.args.use_wandb:
-                wandb.log(log_dict, step=self.step)
+            if self.use_wandb:
+                wandb.log({'loss': loss}, step=self.step)
+        self.validation()
 
     def validation(self):
         """Run trained model on validation dataset."""
         print(f"\nValidation, Step {self.step}:")
 
-        # If num_validation_points is -1, validate on entire validation dataset,
-        # otherwise validate on a subsample of points
-        full_validation = self.args.num_validation_points == -1
-        num_validation_batches = self.args.num_validation_points // self.args.batch_size
-
         # Initialize validation logging dict
         log_dict = {}
 
         # Evaluate model for different numbers of inner loop steps
-        for inner_steps in self.args.validation_inner_steps:
-            log_dict[f"val_psnr_{inner_steps}_steps"] = 0.0
-            log_dict[f"val_loss_{inner_steps}_steps"] = 0.0
+        log_dict["val_loss"] = 0.0
 
-            # Fit modulations for each validation datapoint
-            for i, data in enumerate(self.test_dataloader):
-                data = data.to(self.args.device)
-                if self.patcher:
-                    # If using patching, test data will have a batch size of 1.
-                    # Remove batch dimension and instead convert data into
-                    # patches, with patch dimension acting as batch size
-                    patches, spatial_shape = self.patcher.patch(data[0])
-                    coordinates, features = self.converter.to_coordinates_and_features(
-                        patches
-                    )
+        # Fit modulations for each validation datapoint
+        for i, data in enumerate(self.val_dataloader):
+            data = data.to(self.device)
 
-                    # As num_patches may be much larger than args.batch_size,
-                    # split the fitting of patches into batch_size chunks to
-                    # reduce memory
-                    outputs = metalearning.outer_step_chunked(
-                        self.func_rep,
-                        coordinates,
-                        features,
-                        inner_steps=inner_steps,
-                        inner_lr=self.args.inner_lr,
-                        chunk_size=self.args.batch_size,
-                        gradient_checkpointing=self.args.gradient_checkpointing,
-                    )
+            entropy_codes = self.analysis_transform(data)
+            reconstructions = self.synthesis_transform(entropy_codes)
+            loss = mse_loss(data, reconstructions)
 
-                    # Shape (num_patches, *patch_shape, feature_dim)
-                    patch_features = outputs["reconstructions"]
+            log_dict[f"val_loss"] += loss.item()
 
-                    # When using patches, we cannot directly use psnr and loss
-                    # output by outer step, since these are calculated on the
-                    # padded patches. Therefore we need to reconstruct the data
-                    # in its original unpadded form and manually calculate mse
-                    # and psnr
-                    # Shape (num_patches, *patch_shape, feature_dim) ->
-                    # (num_patches, feature_dim, *patch_shape)
-                    patch_data = conversion.features2data(patch_features, batched=True)
-                    # Shape (feature_dim, *spatial_shape)
-                    data_recon = self.patcher.unpatch(patch_data, spatial_shape)
-                    # Calculate MSE and PSNR values and log them
-                    mse = losses.mse_fn(data_recon, data[0])
-                    psnr = losses.mse2psnr(mse)
-                    log_dict[f"val_psnr_{inner_steps}_steps"] += psnr.item()
-                    log_dict[f"val_loss_{inner_steps}_steps"] += mse.item()
-                else:
-                    coordinates, features = self.converter.to_coordinates_and_features(
-                        data
-                    )
+        # Calculate average loss by dividing by number of batches
+        log_dict[f"val_loss"] /= i + 1
+    
+        print(
+            f"Loss {log_dict['val_loss']:.8f}"
+        )
 
-                    outputs = metalearning.outer_step(
-                        self.func_rep,
-                        coordinates,
-                        features,
-                        inner_steps=inner_steps,
-                        inner_lr=self.args.inner_lr,
-                        is_train=False,
-                        return_reconstructions=True,
-                        gradient_checkpointing=self.args.gradient_checkpointing,
-                    )
-
-                    log_dict[f"val_psnr_{inner_steps}_steps"] += outputs["psnr"]
-                    log_dict[f"val_loss_{inner_steps}_steps"] += outputs["loss"].item()
-
-                if not full_validation and i >= num_validation_batches - 1:
-                    break
-
-            # Calculate average PSNR and loss by dividing by number of batches
-            log_dict[f"val_psnr_{inner_steps}_steps"] /= i + 1
-            log_dict[f"val_loss_{inner_steps}_steps"] /= i + 1
-
-            mean_psnr, mean_loss = (
-                log_dict[f"val_psnr_{inner_steps}_steps"],
-                log_dict[f"val_loss_{inner_steps}_steps"],
-            )
-            print(
-                f"Inner steps {inner_steps}, Loss {mean_loss:.3f}, PSNR {mean_psnr:.3f}"
-            )
-
-            # Use first setting of inner steps for best validation PSNR
-            if inner_steps == self.args.validation_inner_steps[0]:
-                if mean_psnr > self.best_val_psnr:
-                    self.best_val_psnr = mean_psnr
-                    # Optionally save new best model
-                    if self.args.use_wandb and self.model_path:
-                        torch.save(
-                            {
-                                "args": self.args,
-                                "model_state_dict": self.func_rep.state_dict(),
-                                'optimizer_state_dict': self.outer_optimizer.state_dict()
-                            },
-                            self.model_path,
-                        )
-
-            if self.args.use_wandb:
-                # Store final batch of reconstructions to visually inspect model
-                # Shape (batch_size, channels, *spatial_dims)
-                reconstruction = self.converter.to_data(
-                    None, outputs["reconstructions"]
+        if log_dict[f"val_loss"] > self.best_val_loss:
+            self.best_val_loss = log_dict[f"val_loss"]
+            # Optionally save new best model
+            if self.use_wandb and self.model_path:
+                torch.save(
+                    {
+                        "analysis_state_dict": self.analysis_transform.state_dict(),
+                        "synthesis_state_dict": self.synthesis_transform.state_dict(),
+                        "optimizer_state_dict": self.optimizer.state_dict()
+                    },
+                    self.model_path,
                 )
-                if self.patcher:
-                    # If using patches, unpatch the reconstruction
-                    # Shape (channels, *spatial_dims)
-                    reconstruction = self.patcher.unpatch(reconstruction, spatial_shape)
-                if self.converter.data_type == "mri":
-                    # To store an image, slice MRI data along a single dimension
-                    # Shape (1, depth, height, width) -> (1, height, width)
-                    reconstruction = reconstruction[:, reconstruction.shape[1] // 2]
 
-                if self.converter.data_type == "audio":
-                    # Currently only support audio saving when using patches
-                    if self.patcher:
-                        # Unnormalize data from [0, 1] to [-1, 1] as expected by wandb
-                        if self.test_dataloader.dataset.normalize:
-                            reconstruction = 2 * reconstruction - 1
-                        # Saved audio sample needs shape (num_samples, num_channels),
-                        # so transpose
-                        log_dict[
-                            f"val_reconstruction_{inner_steps}_steps"
-                        ] = wandb.Audio(
-                            reconstruction.T.cpu(),
-                            sample_rate=self.test_dataloader.dataset.sample_rate,
-                        )
-                else:
-                    log_dict[f"val_reconstruction_{inner_steps}_steps"] = wandb.Image(
-                        reconstruction
-                    )
-
-                wandb.log(log_dict, step=self.step)
+        if self.use_wandb:
+            wandb.log(log_dict, step=self.step)
 
         print("\n")
+
+if __name__ == "__main__":
+    run_id = "9p36fasn"
+    filename = "modulations_train_3_steps.pt"
+    device = "cuda:0"
+
+    latent_dim = 1024
+    encoding_dim = 512
+    hidden_dim = 1024
+    num_res_blocks = 2
+    use_batch_norm = True
+
+    batch_size = 4096
+    epochs = 10
+
+    dataset = ModulationDataset(run_id, filename, device)
+
+    analysis_transform = AnalysisTransform(
+        latent_dim,
+        encoding_dim,
+        hidden_dim,
+        num_res_blocks,
+        use_batch_norm=use_batch_norm
+    ).to(device)
+
+    synthesis_transform = SynthesisTransform(
+        encoding_dim,
+        latent_dim,
+        hidden_dim,
+        num_res_blocks,
+        use_batch_norm=use_batch_norm
+    ).to(device)
+
+
+    quantization_trainer = QuantizationTrainer(
+        analysis_transform,
+        synthesis_transform,
+        dataset,
+        device=device,
+        batch_size=batch_size
+    )
+
+    for i in range(epochs):
+        quantization_trainer.train_epoch()
+    
+    quantization_trainer.validation()
