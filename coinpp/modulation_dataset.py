@@ -1,6 +1,5 @@
 import torch
 from torch.utils.data import Dataset
-import numpy as np
 
 class ModulationDataset(Dataset):
     def __init__(self, run_id, filename, device):
