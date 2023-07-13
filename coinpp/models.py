@@ -2,6 +2,8 @@
 import torch
 from torch import nn
 from math import sqrt
+from compressai.entropy_models import EntropyBottleneck
+from compressai.models import CompressionModel
 
 
 class Sine(nn.Module):
@@ -384,6 +386,49 @@ class ResBlock(nn.Module):
         output = residual + x
         output = self.activation2(output)
         return output
+
+
+class FactorizedPrior(CompressionModel):
+    """
+    Code adapted from compressai FactorizedPrior
+    (https://github.com/InterDigitalInc/CompressAI/blob/master/compressai/models/google.py#L65)
+    """
+
+    def __init__(self, input_dim, encoding_dim, hidden_dim, num_res_blocks, use_batch_norm=True, activation='selu', **kwargs):
+        super().__init__(**kwargs)
+
+        self.entropy_bottleneck = EntropyBottleneck(encoding_dim)
+
+        self.g_a = AnalysisTransform(input_dim, encoding_dim, hidden_dim, num_res_blocks, use_batch_norm=use_batch_norm, activation=activation)
+
+        self.g_s = SynthesisTransform(encoding_dim, input_dim, hidden_dim, num_res_blocks, use_batch_norm=use_batch_norm, activation=activation)
+
+        self.input_dim = input_dim
+        self.encoding_dim = encoding_dim
+        self.hidden_dim = hidden_dim
+    
+    def forward(self, x):
+        y = self.g_a(x)
+        y_hat, y_likelihoods = self.entropy_bottleneck(y)
+        x_hat = self.g_s(y_hat)
+
+        return {
+            "x_hat": x_hat,
+            "likelihoods": {
+                "y": y_likelihoods,
+            },
+        }
+    
+    def compress(self, x):
+        y = self.g_a(x)
+        y_strings = self.entropy_bottleneck.compress(y)
+        return {"strings": [y_strings], "shape": y.size()[-2:]}
+
+    def decompress(self, strings, shape):
+        assert isinstance(strings, list) and len(strings) == 1
+        y_hat = self.entropy_bottleneck.decompress(strings[0], shape)
+        x_hat = self.g_s(y_hat).clamp_(0, 1)
+        return {"x_hat": x_hat}
 
 
 if __name__ == "__main__":
