@@ -262,14 +262,6 @@ def main(argv):
         torch.manual_seed(args.seed)
         random.seed(args.seed)
 
-    train_transforms = transforms.Compose(
-        [transforms.RandomCrop(args.patch_size), transforms.ToTensor()]
-    )
-
-    test_transforms = transforms.Compose(
-        [transforms.CenterCrop(args.patch_size), transforms.ToTensor()]
-    )
-
     # TODO: add these to parser
     run_id = "9p36fasn"
     filename = "modulations_train_3_steps.pt"
