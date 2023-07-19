@@ -275,7 +275,7 @@ def main(argv):
     
     device = "cuda" if args.cuda and torch.cuda.is_available() else "cpu"
 
-    dataset = ModulationDataset(run_id, filename, device)
+    dataset = ModulationDataset(run_id, filename, "cpu") # should always be on CPU because it's too big
 
     train_dataloader, test_dataloader = process_datasets(dataset, args.batch_size, 0.2, num_workers=args.num_workers, pin_memory=(device == "cuda"))
 
