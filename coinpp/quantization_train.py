@@ -251,6 +251,44 @@ def parse_args(argv):
         help="gradient clipping max norm (default: %(default)s",
     )
     parser.add_argument("--checkpoint", type=str, help="Path to a checkpoint")
+    parser.add_argument("--run-id", type=str, help="Run ID of wandb run to pull modulations from")
+    parser.add_argument("--filename", type=str, help="Filename of .pt file containing the parameters of the modulation net")
+    parser.add_argument(
+        "--input-dim",
+        type=int,
+        default=1024,
+        help="Input dim of analysis tranform, i.e. size of the modulations",
+    )
+    parser.add_argument(
+        "--encoding-dim",
+        type=int,
+        default=1024,
+        help="Dim of the encoding, i.e. dim of output of analysis transform and input of synthesis transform.",
+    )
+    parser.add_argument(
+        "--hidden-dim",
+        type=int,
+        default=1024,
+        help="Dim of the hidden layers of the analysis and synthesis transforms.",
+    )
+    parser.add_argument(
+        "--num-res-blocks",
+        type=int,
+        default=2,
+        help="Number of res blocks in the analysis and synthesis transforms.",
+    )
+    parser.add_argument(
+        "--use-batch-norm",
+        type=int,
+        default=1,
+        help="Whether to use batch norm in res block of analysis and synthesis transforms.",
+    )
+    parser.add_argument(
+        "--activation",
+        type=str,
+        default="selu",
+        help="Name of the activation function to use. Options: selu, leaky",
+    )
     args = parser.parse_args(argv)
     return args
 
@@ -261,25 +299,14 @@ def main(argv):
     if args.seed is not None:
         torch.manual_seed(args.seed)
         random.seed(args.seed)
-
-    # TODO: add these to parser
-    run_id = "9p36fasn"
-    filename = "modulations_train_3_steps.pt"
-
-    input_dim = 1024
-    encoding_dim = 1024
-    hidden_dim = 1024
-    num_res_blocks = 2
-    use_batch_norm = False
-    activation = "selu"
     
     device = "cuda" if args.cuda and torch.cuda.is_available() else "cpu"
 
-    dataset = ModulationDataset(run_id, filename, "cpu") # should always be on CPU because it's too big
+    dataset = ModulationDataset(args.run_id, args.filename, "cpu") # should always be on CPU because it's too big
 
     train_dataloader, test_dataloader = process_datasets(dataset, args.batch_size, 0.2, num_workers=args.num_workers, pin_memory=(device == "cuda"))
 
-    net = FactorizedPrior(input_dim, encoding_dim, hidden_dim, num_res_blocks, use_batch_norm=use_batch_norm, activation=activation)
+    net = FactorizedPrior(args.input_dim, args.encoding_dim, args.hidden_dim, args.num_res_blocks, use_batch_norm=args.use_batch_norm, activation=args.activation)
     net = net.to(device)
 
     optimizer, aux_optimizer = configure_optimizers(net, args)
