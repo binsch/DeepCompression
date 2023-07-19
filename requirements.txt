@@ -1,3 +1,4 @@
+compressai
 h5py
 imageio
 json5
