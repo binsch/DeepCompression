@@ -91,13 +91,13 @@ def configure_optimizers(net, args):
 
 
 def train_one_epoch(
-    model, criterion, train_dataloader, optimizer, aux_optimizer, epoch, clip_max_norm, reconstruction_model, converter
+    model, criterion, train_dataloader, optimizer, aux_optimizer, epoch, clip_max_norm, reconstruction_model, converter, device
 ):
     model.train()
     reconstruction_model.train()
-    device = next(model.parameters()).device
 
-    mean, std = train_dataloader.dataset.mean.to(device), train_dataloader.dataset.std.to(device)
+    mean = train_dataloader.dataset.mean.to(device)
+    std = train_dataloader.dataset.std.to(device)
 
     for i, (modulations, originals) in enumerate(train_dataloader):
         modulations = modulations.to(device)
@@ -134,14 +134,13 @@ def train_one_epoch(
                 f'\tMSE loss: {out_criterion["mse_loss"].item():.3f} |'
                 f'\tBpp loss: {out_criterion["bpp_loss"].item():.2f} |'
                 f"\tAux loss: {aux_loss.item():.2f} |"
-                f'\tPSNR: {mse2psnr(out_criterion["mse_loss"]).mean().item()}'
+                f'\tPSNR: {mse2psnr(out_criterion["mse_loss"]).mean().item():.2f}'
             )
 
 
-def test_epoch(epoch, test_dataloader, model, criterion, reconstruction_model, converter):
+def test_epoch(epoch, test_dataloader, model, criterion, reconstruction_model, converter, device):
     model.eval()
     reconstruction_model.eval()
-    device = next(model.parameters()).device
 
     mean = test_dataloader.dataset.mean.to(device)
     std = test_dataloader.dataset.std.to(device)
@@ -154,7 +153,9 @@ def test_epoch(epoch, test_dataloader, model, criterion, reconstruction_model, c
     with torch.no_grad():
         for (modulations, originals) in test_dataloader:
             # for some reason the lower bound is set to 0 here, so we set it to 1e-9 manually...
-            model.entropy_bottleneck.likelihood_lower_bound.bound = torch.tensor([1e-9], device=device)
+            if model.entropy_bottleneck.likelihood_lower_bound.bound.item() == 0:
+                print("likelihood_lower_bound has been reset")
+                model.entropy_bottleneck.likelihood_lower_bound.bound = torch.tensor([1e-9], device=device)
             modulations = modulations.to(device)
             if originals is not None:
                 originals = originals.to(device)
@@ -176,8 +177,8 @@ def test_epoch(epoch, test_dataloader, model, criterion, reconstruction_model, c
         original = torch.permute(originals[0].cpu().detach(), (1, 2, 0))
         reconstruction = torch.permute(reconstructions[0].cpu().detach(), (1, 2, 0))
         imgs = torch.concatenate((original, reconstruction))
-        plt.imshow(imgs)
-        plt.show()
+        #plt.imshow(imgs)
+        #plt.show()
 
     print(
         f"Test epoch {epoch}: Average losses:"
@@ -377,9 +378,10 @@ def main(argv):
             epoch,
             args.clip_max_norm,
             reconstruction_model,
-            dataset.converter
+            dataset.converter,
+            device
         )
-        loss = test_epoch(epoch, test_dataloader, net, criterion, reconstruction_model, dataset.converter)
+        loss = test_epoch(epoch, test_dataloader, net, criterion, reconstruction_model, dataset.converter, device)
         lr_scheduler.step(loss)
 
         is_best = loss < best_loss
