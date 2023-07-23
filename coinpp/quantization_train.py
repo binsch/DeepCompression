@@ -316,7 +316,7 @@ def parse_args(argv):
     parser.add_argument(
         "--use-batch-norm",
         type=int,
-        default=1,
+        default=0,
         help="Whether to use batch norm in res block of analysis and synthesis transforms.",
     )
     parser.add_argument(
