@@ -1,5 +1,6 @@
 import torch
 import wandb
+from os.path import isfile
 from coinpp.patching import Patcher
 from helpers import get_model
 
@@ -13,9 +14,10 @@ def load_model(wandb_run_path, device):
     # Define local dir based on run id
     run_id = wandb_run_path.split("/")[-1]
     local_dir = f"wandb/{run_id}"
-    # Download model from wandb path (and overwrite if it is already there)
-    run = wandb.Api().run(wandb_run_path)
-    run.file("model.pt").download(root=local_dir, replace=True)
+    # Download model from wandb path if it's not already downloaded
+    if not isfile(f"{local_dir}/model.pt"):
+        run = wandb.Api().run(wandb_run_path)
+        run.file("model.pt").download(root=local_dir, replace=True)
     # Load downloaded model
     if device == torch.device("cpu"):
         model_dict = torch.load(f"{local_dir}/model.pt", map_location=device)
