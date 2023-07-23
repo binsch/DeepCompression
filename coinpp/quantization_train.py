@@ -32,6 +32,7 @@ import random
 import shutil
 import sys
 import numpy as np
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
@@ -48,6 +49,8 @@ from compressai.zoo import image_models
 from coinpp.models import FactorizedPrior
 from coinpp.modulation_dataset import ModulationDataset
 from coinpp.rate_distortion import RateDistortionLoss
+from coinpp.losses import mse2psnr
+from wandb_utils import load_model
 
 
 class AverageMeter:
@@ -88,20 +91,31 @@ def configure_optimizers(net, args):
 
 
 def train_one_epoch(
-    model, criterion, train_dataloader, optimizer, aux_optimizer, epoch, clip_max_norm
+    model, criterion, train_dataloader, optimizer, aux_optimizer, epoch, clip_max_norm, reconstruction_model, converter
 ):
     model.train()
+    reconstruction_model.train()
     device = next(model.parameters()).device
 
-    for i, d in enumerate(train_dataloader):
-        d = d.to(device)
+    mean, std = train_dataloader.dataset.mean.to(device), train_dataloader.dataset.std.to(device)
+
+    for i, (modulations, originals) in enumerate(train_dataloader):
+        modulations = modulations.to(device)
+        if originals is not None:
+            originals = originals.to(device)
 
         optimizer.zero_grad()
         aux_optimizer.zero_grad()
 
-        out_net = model(d)
+        out_net = model(modulations)
+        out_net["x_hat"] = out_net["x_hat"] * std + mean
 
-        out_criterion = criterion(out_net, d)
+        coordinates, _ = converter.to_coordinates_and_features(originals)
+
+        reconstructions = reconstruction_model.modulated_forward(coordinates, out_net["x_hat"])
+        reconstructions = converter.to_data(coordinates, reconstructions)
+
+        out_criterion = criterion(out_net, modulations, reconstructions, originals)
         out_criterion["loss"].backward()
         if clip_max_norm > 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip_max_norm)
@@ -114,18 +128,23 @@ def train_one_epoch(
         if i % 10 == 0:
             print(
                 f"Train epoch {epoch}: ["
-                f"{i*len(d)}/{len(train_dataloader.dataset)}"
+                f"{i*len(modulations)}/{modulations.shape[0]*len(train_dataloader)}"
                 f" ({100. * i / len(train_dataloader):.0f}%)]"
                 f'\tLoss: {out_criterion["loss"].item():.3f} |'
                 f'\tMSE loss: {out_criterion["mse_loss"].item():.3f} |'
                 f'\tBpp loss: {out_criterion["bpp_loss"].item():.2f} |'
-                f"\tAux loss: {aux_loss.item():.2f}"
+                f"\tAux loss: {aux_loss.item():.2f} |"
+                f'\tPSNR: {mse2psnr(out_criterion["mse_loss"]).mean().item()}'
             )
 
 
-def test_epoch(epoch, test_dataloader, model, criterion):
+def test_epoch(epoch, test_dataloader, model, criterion, reconstruction_model, converter):
     model.eval()
+    reconstruction_model.eval()
     device = next(model.parameters()).device
+
+    mean = test_dataloader.dataset.mean.to(device)
+    std = test_dataloader.dataset.std.to(device)
 
     loss = AverageMeter()
     bpp_loss = AverageMeter()
@@ -133,15 +152,32 @@ def test_epoch(epoch, test_dataloader, model, criterion):
     aux_loss = AverageMeter()
 
     with torch.no_grad():
-        for d in test_dataloader:
-            d = d.to(device)
-            out_net = model(d)
-            out_criterion = criterion(out_net, d)
+        for (modulations, originals) in test_dataloader:
+            # for some reason the lower bound is set to 0 here, so we set it to 1e-9 manually...
+            model.entropy_bottleneck.likelihood_lower_bound.bound = torch.tensor([1e-9], device=device)
+            modulations = modulations.to(device)
+            if originals is not None:
+                originals = originals.to(device)
+            out_net = model(modulations)
+            out_net["x_hat"] = out_net["x_hat"] * std + mean
+
+            coordinates, features = converter.to_coordinates_and_features(originals)
+
+            reconstructions = reconstruction_model.modulated_forward(coordinates, out_net["x_hat"])
+            reconstructions = converter.to_data(coordinates, reconstructions)
+
+            out_criterion = criterion(out_net, modulations, reconstructions, originals)
 
             aux_loss.update(model.aux_loss())
             bpp_loss.update(out_criterion["bpp_loss"])
             loss.update(out_criterion["loss"])
             mse_loss.update(out_criterion["mse_loss"])
+
+        original = torch.permute(originals[0].cpu().detach(), (1, 2, 0))
+        reconstruction = torch.permute(reconstructions[0].cpu().detach(), (1, 2, 0))
+        imgs = torch.concatenate((original, reconstruction))
+        plt.imshow(imgs)
+        plt.show()
 
     print(
         f"Test epoch {epoch}: Average losses:"
@@ -251,24 +287,24 @@ def parse_args(argv):
         help="gradient clipping max norm (default: %(default)s",
     )
     parser.add_argument("--checkpoint", type=str, help="Path to a checkpoint")
-    parser.add_argument("--run-id", type=str, help="Run ID of wandb run to pull modulations from")
+    parser.add_argument("--wandb-run-path", type=str, help="Path of wandb run")
     parser.add_argument("--filename", type=str, help="Filename of .pt file containing the parameters of the modulation net")
     parser.add_argument(
         "--input-dim",
         type=int,
-        default=1024,
+        default=2048,
         help="Input dim of analysis tranform, i.e. size of the modulations",
     )
     parser.add_argument(
         "--encoding-dim",
         type=int,
-        default=1024,
+        default=2048,
         help="Dim of the encoding, i.e. dim of output of analysis transform and input of synthesis transform.",
     )
     parser.add_argument(
         "--hidden-dim",
         type=int,
-        default=1024,
+        default=2048,
         help="Dim of the hidden layers of the analysis and synthesis transforms.",
     )
     parser.add_argument(
@@ -302,12 +338,18 @@ def main(argv):
     
     device = "cuda" if args.cuda and torch.cuda.is_available() else "cpu"
 
-    dataset = ModulationDataset(args.run_id, args.filename, "cpu") # should always be on CPU because it's too big
+    print("preprocessing data")
+    run_id = args.wandb_run_path.split("/")[-1]
+    dataset = ModulationDataset(run_id, args.filename, "cpu", dataset_name="cifar10") # should always be on CPU because it's too big
 
     train_dataloader, test_dataloader = process_datasets(dataset, args.batch_size, 0.2, num_workers=args.num_workers, pin_memory=(device == "cuda"))
 
     net = FactorizedPrior(args.input_dim, args.encoding_dim, args.hidden_dim, args.num_res_blocks, use_batch_norm=args.use_batch_norm, activation=args.activation)
     net = net.to(device)
+
+    print("loading reconstruction model")
+
+    reconstruction_model, reconstruction_model_args, patcher = load_model(args.wandb_run_path, device)
 
     optimizer, aux_optimizer = configure_optimizers(net, args)
     lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
@@ -334,8 +376,10 @@ def main(argv):
             aux_optimizer,
             epoch,
             args.clip_max_norm,
+            reconstruction_model,
+            dataset.converter
         )
-        loss = test_epoch(epoch, test_dataloader, net, criterion)
+        loss = test_epoch(epoch, test_dataloader, net, criterion, reconstruction_model, dataset.converter)
         lr_scheduler.step(loss)
 
         is_best = loss < best_loss

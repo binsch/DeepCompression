@@ -49,20 +49,16 @@ class RateDistortionLoss(nn.Module):
         self.lmbda = lmbda
         self.return_type = return_type
 
-    def forward(self, output, target):
-        num_pixels = target.size()[1]
+    def forward(self, output, target, reconstruction, original):
+        num_pixels = reconstruction.shape[0] * reconstruction.shape[1] * reconstruction.shape[2]
         out = {}
 
         out["bpp_loss"] = sum(
             (torch.log(likelihoods).sum() / (-math.log(2) * num_pixels))
             for likelihoods in output["likelihoods"].values()
         )
-        if self.metric == ms_ssim:
-            out["ms_ssim_loss"] = self.metric(output["x_hat"], target, data_range=1)
-            distortion = 1 - out["ms_ssim_loss"]
-        else:
-            out["mse_loss"] = self.metric(output["x_hat"], target)
-            distortion = 255**2 * out["mse_loss"]
+        out["mse_loss"] = self.metric(reconstruction, original)
+        distortion = out["mse_loss"]
 
         out["loss"] = self.lmbda * distortion + out["bpp_loss"]
         if self.return_type == "all":
