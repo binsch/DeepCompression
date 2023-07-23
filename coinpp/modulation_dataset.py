@@ -1,12 +1,18 @@
 import torch
 from torch.utils.data import Dataset
 
+import torchvision
+
 from bisect import bisect
 
+import coinpp.conversion as conversion
+import data.image as image
+from helpers import get_datasets_and_converter, get_dataset_root
+
 class ModulationDataset(Dataset):
-    def __init__(self, run_id, filename, device, normalize=True):
+    def __init__(self, run_id, filename, device, normalize=True, dataset_name=None):
         self.modulations = self.load_modulations(run_id, filename, device)
-        self.is_patching_enabled = (type(self.modulations is list))
+        self.is_patching_enabled = (type(self.modulations) is list)
         if self.is_patching_enabled:
             self.latent_dim = self.modulations[0].shape[1]
             self.num_samples = len(self.modulations)
@@ -25,6 +31,22 @@ class ModulationDataset(Dataset):
         if normalize:
             self.mean = torch.mean(self.modulations, dim=0)
             self.std = torch.std(self.modulations, dim=0)
+        
+        self.return_original = (dataset_name is not None)
+
+        if not self.return_original:
+            return
+        
+        if dataset_name == "cifar10":
+            self.converter = conversion.Converter("image")
+
+            transforms = [torchvision.transforms.ToTensor()]
+            self.original_dataset = image.CIFAR10(
+                root=get_dataset_root("cifar10"),
+                train=True,
+                transform=torchvision.transforms.Compose(transforms),
+                download=True,
+            )
 
 
     def load_modulations(self, run_id, filename, device):
@@ -56,10 +78,14 @@ class ModulationDataset(Dataset):
     
 
     def __getitem__(self, idx):
-        if self.normalize:
-            return (self.modulations[idx] - self.mean) / self.std
+        if self.return_original:
+            original = self.original_dataset[idx]
         else:
-            return self.modulations[idx]
+            original = None
+        if self.normalize:
+            return (self.modulations[idx] - self.mean) / self.std, original
+        else:
+            return self.modulations[idx], original
 
 
 if __name__ == "__main__":
