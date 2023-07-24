@@ -134,7 +134,7 @@ def train_one_epoch(
                 f'\tMSE loss: {out_criterion["mse_loss"].item():.3f} |'
                 f'\tBpp loss: {out_criterion["bpp_loss"].item():.2f} |'
                 f"\tAux loss: {aux_loss.item():.2f} |"
-                f'\tPSNR: {mse2psnr(out_criterion["mse_loss"]).mean().item()}'
+                f'\tPSNR: {mse2psnr(out_criterion["mse_loss"]).mean().item():.2f}'
             )
 
 
