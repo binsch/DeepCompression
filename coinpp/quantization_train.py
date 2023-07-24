@@ -33,6 +33,7 @@ import shutil
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+import wandb
 
 import torch
 import torch.nn as nn
@@ -180,13 +181,25 @@ def test_epoch(epoch, test_dataloader, model, criterion, reconstruction_model, c
         #plt.imshow(imgs)
         #plt.show()
 
+    psnr = mse2psnr(mse_loss.avg)
+
     print(
         f"Test epoch {epoch}: Average losses:"
         f"\tLoss: {loss.avg:.3f} |"
         f"\tMSE loss: {mse_loss.avg:.3f} |"
         f"\tBpp loss: {bpp_loss.avg:.2f} |"
-        f"\tAux loss: {aux_loss.avg:.2f}\n"
+        f"\tAux loss: {aux_loss.avg:.2f} |"
+        f"\tPSNR: {psnr:.2f}\n"
     )
+
+    wandb.log({
+        "epoch": epoch,
+        "loss": loss.avg,
+        "mse_loss": mse_loss.avg,
+        "bpp_loss": bpp_loss.avg,
+        "aux_loss": aux_loss.avg,
+        "PSNR": psnr
+    })
 
     return loss.avg
 
@@ -365,6 +378,15 @@ def main(argv):
         optimizer.load_state_dict(checkpoint["optimizer"])
         aux_optimizer.load_state_dict(checkpoint["aux_optimizer"])
         lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
+
+    run = wandb.init(
+        # Set the project where this run will be logged
+        project="VC-INR",
+        # Track hyperparameters and run metadata
+        config={
+            "args": args
+        }
+    )
 
     best_loss = float("inf")
     for epoch in range(last_epoch, args.epochs):
