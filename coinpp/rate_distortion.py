@@ -50,7 +50,8 @@ class RateDistortionLoss(nn.Module):
         self.return_type = return_type
 
     def forward(self, output, target, reconstruction, original):
-        num_pixels = reconstruction.shape[0] * reconstruction.shape[1] * reconstruction.shape[2]
+        B, _, H, W = original.shape
+        num_pixels = B * H * W
         out = {}
 
         out["bpp_loss"] = sum(
