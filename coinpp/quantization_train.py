@@ -339,6 +339,12 @@ def parse_args(argv):
         default="selu",
         help="Name of the activation function to use. Options: selu, leaky",
     )
+    parser.add_argument(
+        "--use-lr-scheduler",
+        type=int,
+        default=1,
+        help="Whether or not to use an LR scheduler instead of a static LR"
+    )
     args = parser.parse_args(argv)
     return args
 
@@ -366,7 +372,8 @@ def main(argv):
     reconstruction_model, reconstruction_model_args, patcher = load_model(args.wandb_run_path, device)
 
     optimizer, aux_optimizer = configure_optimizers(net, args)
-    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
+    if args.use_lr_scheduler:
+        lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
     criterion = RateDistortionLoss(lmbda=args.lmbda)
 
     last_epoch = 0
@@ -377,7 +384,8 @@ def main(argv):
         net.load_state_dict(checkpoint["state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         aux_optimizer.load_state_dict(checkpoint["aux_optimizer"])
-        lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
+        if args.use_lr_scheduler:
+            lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
 
     run = wandb.init(
         # Set the project where this run will be logged
@@ -404,7 +412,8 @@ def main(argv):
             device
         )
         loss = test_epoch(epoch, test_dataloader, net, criterion, reconstruction_model, dataset.converter, device)
-        lr_scheduler.step(loss)
+        if args.use_lr_schedular:
+            lr_scheduler.step(loss)
 
         is_best = loss < best_loss
         best_loss = min(loss, best_loss)
@@ -417,7 +426,7 @@ def main(argv):
                     "loss": loss,
                     "optimizer": optimizer.state_dict(),
                     "aux_optimizer": aux_optimizer.state_dict(),
-                    "lr_scheduler": lr_scheduler.state_dict(),
+                    "lr_scheduler": lr_scheduler.state_dict() if args.use_lr_scheduler else {},
                 },
                 is_best,
             )
