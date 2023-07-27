@@ -81,7 +81,7 @@ def compute_modulations(
                 coordinates,
                 features,
                 inner_steps=inner_steps,
-                inner_lr=args.inner_lr,
+                inner_lr=model.inner_lr,
                 chunk_size=batch_size,
                 gradient_checkpointing=args.gradient_checkpointing,
             )
@@ -92,7 +92,7 @@ def compute_modulations(
                 coordinates,
                 features,
                 inner_steps=inner_steps,
-                inner_lr=args.inner_lr,
+                inner_lr=model.inner_lr,
                 is_train=False,
                 return_reconstructions=False,
                 gradient_checkpointing=args.gradient_checkpointing,
