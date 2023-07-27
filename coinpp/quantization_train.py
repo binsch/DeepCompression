@@ -412,7 +412,7 @@ def main(argv):
             device
         )
         loss = test_epoch(epoch, test_dataloader, net, criterion, reconstruction_model, dataset.converter, device)
-        if args.use_lr_schedular:
+        if args.use_lr_scheduler:
             lr_scheduler.step(loss)
 
         is_best = loss < best_loss
