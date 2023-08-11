@@ -12,6 +12,7 @@ def inner_loop(
     inner_lr,
     is_train=False,
     gradient_checkpointing=False,
+    modality=1
 ):
     """Performs inner loop, i.e. fits modulations such that the function
     representation can match the target features.
@@ -51,6 +52,8 @@ def inner_loop(
                 inner_lr,
                 is_train,
                 gradient_checkpointing,
+                modality,
+                step
             )
     return fitted_modulations
 
@@ -63,6 +66,8 @@ def inner_loop_step(
     inner_lr,
     is_train=False,
     gradient_checkpointing=False,
+    modality=1,
+    step=0
 ):
     """Performs a single inner loop step."""
     detach = not torch.is_grad_enabled() and gradient_checkpointing
@@ -83,7 +88,7 @@ def inner_loop_step(
             create_graph=is_train and not detach,
         )[0]
     # Perform single gradient descent step
-    return modulations - func_rep.inner_lr * grad
+    return modulations - func_rep.inner_lr[modality][step] * grad
 
 
 def outer_step(
@@ -95,6 +100,7 @@ def outer_step(
     is_train=False,
     return_reconstructions=False,
     gradient_checkpointing=False,
+    modality=0
 ):
     """
 
@@ -106,9 +112,8 @@ def outer_step(
     """
     func_rep.zero_grad()
     batch_size = len(coordinates)
-    modulations_init = torch.zeros(
-        batch_size, func_rep.modulation_net.latent_dim, device=coordinates.device
-    ).requires_grad_()
+    modulations_init = func_rep.modality_modulations[modality]
+    
 
     # Run inner loop
     modulations = inner_loop(
@@ -120,6 +125,7 @@ def outer_step(
         inner_lr,
         is_train,
         gradient_checkpointing,
+        modality
     )
 
     with torch.set_grad_enabled(is_train):

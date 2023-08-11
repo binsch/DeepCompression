@@ -3,6 +3,7 @@ import helpers
 import os
 import pprint
 import torch
+import torch.nn as nn
 import wandb
 from coinpp.patching import Patcher
 from coinpp.training import Trainer
@@ -217,6 +218,7 @@ def main(args):
 
         # Define path where model will be saved
         model_path = Path(wandb.run.dir) / "model.pt"
+        model_train_path = Path(wandb.run.dir) / "model_train.pt"
 
         #MAC-ADD: save code
         wandb.run.log_code()
@@ -233,6 +235,17 @@ def main(args):
     model = helpers.get_model(args)
     model.define_inner_lr_params(args.latent_dim, args.device)
 
+    '''
+    CONTINUED TRAINING
+    checkpoint = torch.load("/content/drive/MyDrive/DLLab/mac_dll/wandb/run-20230805_135645-h7csbsgi/files/model.pt",map_location='cpu')
+    model.load_state_dict(checkpoint["model_state_dict"], strict=False)
+    '''
+    checkpoint=None
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model.to(device)
+    
+
+
     print(model)
     print(args)
 
@@ -246,6 +259,7 @@ def main(args):
     if args.use_wandb:
         torch.save({"args": args, "state_dict": model.state_dict()}, model_path)
         wandb.save(str(model_path.absolute()), base_path=wandb.run.dir, policy="live")
+        wandb.run.log_code()
 
     # Initialize trainer and start training
     trainer = Trainer(
@@ -256,11 +270,13 @@ def main(args):
         test_dataset=test_dataset,
         patcher=patcher,
         model_path=model_path,
+        model_train_path = None,
+        checkpoint=checkpoint
     )
 
     for epoch in range(args.num_epochs):
         print(f"\nEpoch {epoch + 1}:")
-        trainer.train_epoch()
+        trainer.train_epoch(epoch)
 
 
 if __name__ == "__main__":

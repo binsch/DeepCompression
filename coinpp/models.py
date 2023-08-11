@@ -119,26 +119,59 @@ class Siren(nn.Module):
         self.dim_out = dim_out
         self.num_layers = num_layers
 
-        layers = []
+        self.layers = []
         for ind in range(num_layers - 1):
             is_first = ind == 0
             layer_w0 = w0_initial if is_first else w0
             layer_dim_in = dim_in if is_first else dim_hidden
 
-            layers.append(
-                SirenLayer(
-                    dim_in=layer_dim_in,
+            #MODALITY HEADS
+            if is_first:
+
+              self.image_encoder = SirenLayer(
+                    dim_in=layer_dim_in[1],
                     dim_out=dim_hidden,
                     w0=layer_w0,
                     use_bias=use_bias,
                     is_first=is_first,
                 )
-            )
 
-        self.net = nn.Sequential(*layers)
+              self.audio_encoder = SirenLayer(
+                    dim_in=layer_dim_in[0],
+                    dim_out=dim_hidden,
+                    w0=layer_w0,
+                    use_bias=use_bias,
+                    is_first=is_first,
+                )
+              
+              self.era5_encoder = SirenLayer(
+                    dim_in=layer_dim_in[2],
+                    dim_out=dim_hidden,
+                    w0=layer_w0,
+                    use_bias=use_bias,
+                    is_first=is_first,
+                )
 
-        self.last_layer = SirenLayer(
-            dim_in=dim_hidden, dim_out=dim_out, w0=w0, use_bias=use_bias, is_last=True
+            else:  
+              self.layers.append(
+                  SirenLayer(
+                      dim_in=layer_dim_in,
+                      dim_out=dim_hidden,
+                      w0=layer_w0,
+                      use_bias=use_bias,
+                      is_first=is_first,
+                  )
+              )
+
+        self.net = nn.Sequential(*self.layers)
+
+        #MODALITY TAILS
+
+        self.last_layer_image = SirenLayer(
+            dim_in=dim_hidden, dim_out=dim_out[1], w0=w0, use_bias=use_bias, is_last=True
+        )
+        self.last_layer_audio = SirenLayer(
+            dim_in=dim_hidden, dim_out=dim_out[0], w0=w0, use_bias=use_bias, is_last=True
         )
 
     def forward(self, x):
@@ -151,8 +184,17 @@ class Siren(nn.Module):
         Returns:
             Tensor of shape (*, dim_out).
         """
+        if x.shape[2] == 2:
+          x = self.image_encoder(x)
+          last_layer = self.last_layer_image
+        elif x.shape[2] == 1:
+          x = self.audio_encoder(x)
+          last_layer = self.last_layer_audio
+        else:
+          x = self.era5_encoder(x)
+          last_layer = self.last_layer_audio
         x = self.net(x)
-        return self.last_layer(x)
+        return last_layer(x)
 
 
 class ModulatedSiren(Siren):
@@ -216,9 +258,32 @@ class ModulatedSiren(Siren):
             siren_dim_out=(self.dim_out if modulate_last_layer else None),
         )
 
+        batch_size = 64
+
+        #MODALITY LATENT MODULATION INITS
+        
+        self.audio_modulations = nn.Parameter( torch.zeros(batch_size,latent_dim, requires_grad=True).to("cuda"))
+        self.image_modulations = nn.Parameter( torch.zeros(batch_size,latent_dim, requires_grad=True).to("cuda"))
+        self.manifold_modulations = nn.Parameter( torch.zeros(batch_size,latent_dim, requires_grad=True).to("cuda"))
+
+        self.modality_modulations = [self.audio_modulations, self.image_modulations,self.manifold_modulations]
+
     def define_inner_lr_params(self, latent_dim, device):
-      self.inner_lr = nn.Parameter( torch.ones(latent_dim, requires_grad=True).to(device))
-      print(self.inner_lr.is_leaf)
+
+      #TASK AND INNER STEP PRECONDITIONING MATRICES (INNER LR)
+      
+      self.inner_lr_audio_step0 = nn.Parameter( torch.ones(latent_dim, requires_grad=True).to(device))
+      self.inner_lr_audio_step1 = nn.Parameter( torch.ones(latent_dim, requires_grad=True).to(device))
+      self.inner_lr_audio_step2 = nn.Parameter( torch.ones(latent_dim, requires_grad=True).to(device))
+      self.inner_lr_audio = [self.inner_lr_audio_step0, self.inner_lr_audio_step1, self.inner_lr_audio_step2]
+
+      self.inner_lr_image_step0 = nn.Parameter( torch.ones(latent_dim, requires_grad=True).to(device))
+      self.inner_lr_image_step1 = nn.Parameter( torch.ones(latent_dim, requires_grad=True).to(device))
+      self.inner_lr_image_step2 = nn.Parameter( torch.ones(latent_dim, requires_grad=True).to(device))
+      self.inner_lr_image = [self.inner_lr_image_step0, self.inner_lr_image_step1, self.inner_lr_image_step2]
+
+      self.inner_lr = [self.inner_lr_audio,self.inner_lr_image]
+
 
 
     def modulated_forward(self, x, latent):
@@ -239,10 +304,25 @@ class ModulatedSiren(Siren):
         # Flatten all spatial dimensions, i.e. shape
         # (batch_size, *, dim_in) -> (batch_size, num_points, dim_in)
         x = x.view(x.shape[0], -1, x.shape[-1])
-        x = self.net[0](x)
+
+        if x.shape[2] == 2:
+          self.first_layer = self.image_encoder
+          self.last_layer = self.last_layer_image
+          modality = 1
+        elif x.shape[2] == 1:
+          self.first_layer = self.audio_encoder
+          self.last_layer = self.last_layer_audio
+          modality = 0
+        else:
+          self.first_layer = self.era5_encoder
+          self.last_layer = self.last_layer_audio
+          modality = 2
+
+        x = self.first_layer(x)
+
         # U, V: (batch_size, num_hidden_layers, dim_hidden, dim_hidden)
         # last_layer_mod: (batch_size, num_hidden_layers, dim_out, dim_hidden)
-        U, V, last_layer_mod = self.modulation_net(latent)
+        U, V, last_layer_mod = self.modulation_net(latent, modality)
 
         # Iterate through layers and apply corresponding modulation matrix to each.
         for i, module in enumerate(self.net[1:]):
@@ -287,10 +367,15 @@ class LatentToModulationMatrices(nn.Module):
         # If the last layer is also modulated, we need to generate an additional modulation matrix for it
         # This matrix can be calculated directly (not matrix multiplication necessary),
         # because it is low dimensional (siren_dim_hidden x siren_dim_out) where siren_dim_out is usually in the single digits.
-        self.modulation_net_dim_out = (
+        self.modulation_net_dim_out = [(
             self.UV_end_idx +
-            (self.siren_dim_out * self.siren_dim_hidden if self.siren_dim_out is not None else 0)
-        )
+            (self.siren_dim_out[0] * self.siren_dim_hidden if self.siren_dim_out is not None else 0)
+        ),
+        (
+            self.UV_end_idx +
+            (self.siren_dim_out[1] * self.siren_dim_hidden if self.siren_dim_out is not None else 0)
+        )]
+
 
         # The initial layer projects the latent space representation onto a vector that can be used as input for the first ResBlock
         layers = [nn.Linear(latent_dim, modulation_net_dim_hidden), nn.LeakyReLU()]
@@ -300,12 +385,21 @@ class LatentToModulationMatrices(nn.Module):
             layers.append(ResBlock(modulation_net_dim_hidden, use_batch_norm=use_batch_norm))
 
         # The last layer maps from the hidden dim of the ResBlock to the correct output length
-        layers += [nn.Linear(modulation_net_dim_hidden, self.modulation_net_dim_out)]
+        layers += [nn.Linear(modulation_net_dim_hidden, self.modulation_net_dim_out[1])]
         self.net = nn.Sequential(*layers)
+
+        self.last_layer_audio = nn.Linear(modulation_net_dim_hidden, self.modulation_net_dim_out[0])
+        self.last_layer_image = nn.Linear(modulation_net_dim_hidden, self.modulation_net_dim_out[1])
 
         self.layer_norm = nn.LayerNorm(latent_dim)
 
-    def forward(self, latent):
+    def forward(self, latent, modality):
+
+        if modality == 0 or modality == 2:
+          self.net[-1] = self.last_layer_audio
+        elif modality == 1:
+          self.net[-1] = self.last_layer_image
+
         out = self.layer_norm(latent)
         out = self.net(out)
 
@@ -318,12 +412,12 @@ class LatentToModulationMatrices(nn.Module):
         )
         U, V = UV[:,:,0,:,:], UV[:,:,1,:,:]
 
-        if self.siren_dim_out is None:
+        if self.siren_dim_out[modality] is None:
             return U, V, None
 
         last_layer_mod = out[:,self.UV_end_idx:].view(
             latent.shape[0],
-            self.siren_dim_out,
+            self.siren_dim_out[modality],
             self.siren_dim_hidden
         )
 

@@ -30,8 +30,9 @@ def dataset_name_to_dims(dataset_name):
         dim_in = 3
         dim_out = 1
     if dataset_name == "librispeech":
-        dim_in = 1
-        dim_out = 1
+        #[1,2, 3], [1,3, 1] 
+        dim_in = [1,2, 3]
+        dim_out = [1,3, 1]
     return dim_in, dim_out
 
 
@@ -166,10 +167,13 @@ def get_datasets_and_converter(args, force_no_random_crop=False):
             )
 
     if "librispeech" in (args.train_dataset, args.test_dataset):
-        converter = conversion.Converter("audio")
+        converter_a = conversion.Converter("audio")
+        converter_i = conversion.Converter("image")
+        converter_m = conversion.Converter("era5")
 
+        
         # We use first 3 seconds of each audio sample
-        if args.train_dataset == "librispeech":
+        if args.train_dataset == "librisp":
             train_dataset = audio.LIBRISPEECH(
                 root=get_dataset_root("librispeech"),
                 url="train-clean-100",
@@ -186,8 +190,41 @@ def get_datasets_and_converter(args, force_no_random_crop=False):
                 num_secs=3,
                 download=True,
             )
+        
+            
+        if False:
+            transforms = [torchvision.transforms.ToTensor()]
+            #if use_patching and not force_no_random_crop:
+                #transforms.append(random_crop)
 
-    return train_dataset, test_dataset, converter
+            train_dataset_cifar = image.CIFAR10(
+                root=get_dataset_root("cifar10"),
+                train=True,
+                transform=torchvision.transforms.Compose(transforms),
+            )
+        if False:
+            test_dataset_cifar = image.CIFAR10(
+                root=get_dataset_root("cifar10"),
+                train=False,
+                transform=torchvision.transforms.ToTensor(),
+            )
+        
+        if False:
+            train_dataset_era5 = era5.ERA5(root=get_dataset_root("era5"), split="train")
+
+        if False:
+            test_dataset_era5 = era5.ERA5(root=get_dataset_root("era5"), split="test")
+
+        train_dataset=None
+        train_dataset_cifar = None
+        test_dataset_cifar = None
+        train_dataset_era5 = None
+        test_dataset_era5 = None
+        
+
+        
+
+    return [train_dataset,train_dataset_cifar, train_dataset_era5], [test_dataset,test_dataset_cifar,test_dataset_era5], [converter_a, converter_i,converter_m]
 
 
 def get_model(args):
