@@ -1,6 +1,6 @@
 # COIN++
 
-Official implementation of [COIN++: Neural Compression Across Modalities](https://arxiv.org/abs/2201.12904).
+Fork of [COIN++: Neural Compression Across Modalities](https://arxiv.org/abs/2201.12904).
 
 <img src="https://github.com/EmilienDupont/coinpp/raw/main/imgs/fig1.png" width="800">
 
